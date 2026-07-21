@@ -5,6 +5,9 @@ import os
 import io
 import re
 
+# --- [설정] 관리자 비밀번호 ---
+ADMIN_PASSWORD = "1234"  # 💡 원하시는 비밀번호로 변경하세요!
+
 # --- 1. 데이터베이스(SQLite) 초기화 및 자동 클렌징 ---
 DB_FILE = "haetan_cost_management.db"
 
@@ -46,7 +49,6 @@ def init_db():
         )
     """)
     
-    # [데이터 자동 클렌징 엔진]
     cursor.execute("UPDATE ingredients SET item_name = TRIM(item_name)")
     cursor.execute("UPDATE menu_bom SET ingredient_name = TRIM(ingredient_name), menu_name = TRIM(menu_name)")
     cursor.execute("UPDATE menu_prices SET menu_name = TRIM(menu_name)")
@@ -156,6 +158,16 @@ menu = st.sidebar.radio(
     ]
 )
 
+# 💡 관리자 권한 인증 로직 추가
+st.sidebar.markdown("---")
+input_pw = st.sidebar.text_input("🔐 관리자 비밀번호", type="password", help="데이터 업로드 및 수정을 위한 관리자 전용 비밀번호입니다.")
+is_admin = (input_pw == ADMIN_PASSWORD)
+
+if is_admin:
+    st.sidebar.success("✅ 관리자 모드 활성화됨")
+else:
+    st.sidebar.info("👀 보기 전용 모드 (수정 불가)")
+
 st.markdown(
     """
     <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
@@ -169,7 +181,10 @@ st.markdown(
 # --- 기능 1: 전체 메뉴 종합 요약 분석표 ---
 if menu == "1. 메뉴 원가 종합분석표":
     st.subheader("📋 메뉴 원가 종합분석표")
-    st.markdown("전체 메뉴의 마진을 분석합니다. **판매가(원)를 더블클릭하여 수정한 뒤 반드시 아래의 [저장하기] 버튼을 누르세요.**")
+    if is_admin:
+        st.markdown("전체 메뉴의 마진을 분석합니다. **판매가(원)를 더블클릭하여 수정한 뒤 반드시 아래의 [저장하기] 버튼을 누르세요.**")
+    else:
+        st.markdown("전체 메뉴의 마진 분석표입니다. (판매가 수정은 관리자만 가능합니다)")
     
     unit_prices, df_bom, missing_ings = calculate_unit_prices()
     
@@ -177,7 +192,7 @@ if menu == "1. 메뉴 원가 종합분석표":
         st.warning(f"⚠️ **[알림] 마스터 DB에 없어서 0원으로 임시 연산된 식재료:** {', '.join(missing_ings)}")
 
     if df_bom.empty:
-        st.warning("레시피 DB가 비어있습니다. 좌측 '3. 레시피 DB 업로드' 메뉴에서 레시피를 먼저 세팅해주세요.")
+        st.warning("레시피 DB가 비어있습니다.")
     else:
         conn = get_connection()
         df_prices = pd.read_sql_query("SELECT * FROM menu_prices", conn)
@@ -233,12 +248,13 @@ if menu == "1. 메뉴 원가 종합분석표":
                 "원가율(%)": "{:.1f}"
             }).map(color_cost_rate, subset=['원가율(%)'])
 
+            # 💡 is_admin이 False이면 표 전체가 수정 불가(disabled=True) 상태가 됨
             edited_df = st.data_editor(
                 styled_df,
                 column_config={
                     "카테고리": st.column_config.TextColumn("분류", disabled=True),
                     "메뉴명": st.column_config.TextColumn("메뉴명", disabled=True),
-                    "적용 판매가(원)": st.column_config.NumberColumn("적용 판매가(원) ✏️", help="가격을 고치고 꼭 아래 저장버튼을 누르세요!", format="%d"),
+                    "적용 판매가(원)": st.column_config.NumberColumn("적용 판매가(원)", disabled=not is_admin, format="%d"),
                     "총 원가(원)": st.column_config.TextColumn("총 원가(원)", disabled=True),
                     "예상 마진(원)": st.column_config.TextColumn("예상 마진(원)", disabled=True),
                     "원가율(%)": st.column_config.TextColumn("원가율(%)", disabled=True)
@@ -246,19 +262,20 @@ if menu == "1. 메뉴 원가 종합분석표":
                 use_container_width=True, hide_index=True
             )
             
-            if st.button("💾 수정한 판매가 DB에 저장하기 (클릭 필수)"):
-                conn = get_connection()
-                cursor = conn.cursor()
-                for _, row in edited_df.iterrows():
-                    cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (row['메뉴명'], row['적용 판매가(원)']))
-                conn.commit()
-                conn.close()
-                st.success("판매가가 성공적으로 변경 및 재계산되었습니다.")
-                st.rerun()
+            if is_admin:
+                if st.button("💾 수정한 판매가 DB에 저장하기 (클릭 필수)"):
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    for _, row in edited_df.iterrows():
+                        cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (row['메뉴명'], row['적용 판매가(원)']))
+                    conn.commit()
+                    conn.close()
+                    st.success("판매가가 성공적으로 변경 및 재계산되었습니다.")
+                    st.rerun()
         else:
             st.info("현재 등록된 판매 메뉴가 없습니다.")
 
-# --- 기능 2: 메뉴별 원가/마진 분석 (💡 리스트 형태 전면 개편) ---
+# --- 기능 2: 메뉴별 원가/마진 분석 ---
 elif menu == "2. 메뉴별 원가/마진 분석":
     st.subheader("📈 카테고리별 원가/마진 상세 분석")
     st.markdown("상단의 리스트에서 분석할 메뉴를 클릭하시면 아래에 상세 내역이 표시됩니다.")
@@ -284,23 +301,20 @@ elif menu == "2. 메뉴별 원가/마진 분석":
                 if len(cat_menus) == 0:
                     st.info(f"등록된 [{cat}] 메뉴가 없습니다.")
                 else:
-                    # 💡 슬라이드(Expander) 방식을 버리고 상단 라디오 버튼 리스트 형식으로 배치
                     selected_m_name = st.radio(
                         f"👇 분석하실 **[{cat}]** 메뉴를 선택해주세요:",
                         sorted(cat_menus),
-                        horizontal=True, # 메뉴를 옆으로 쭉 나열
+                        horizontal=True, 
                         key=f"radio_{cat}"
                     )
                     
                     st.markdown("---")
                     
-                    # 💡 클릭된 메뉴의 상세 정보가 바로 아래 고정된 위치에 렌더링됨
                     menu_data = df_bom[df_bom['menu_name'] == selected_m_name]
                     default_price = int(price_dict.get(selected_m_name, 0))
                     
                     st.markdown(f"#### 🎯 [{selected_m_name}] 가맹점 상권별 판매가 시뮬레이터")
                     
-                    # 💡 시뮬레이터 입력창에도 1,000 단위 쉼표 포맷 강제 적용 (format="%d")
                     simulated_price = st.number_input(
                         f"실제 판매가 입력 (현재 적용가: {default_price:,}원)", 
                         min_value=0, value=default_price, step=1000,
@@ -364,6 +378,10 @@ elif menu == "2. 메뉴별 원가/마진 분석":
 # --- 기능 3: 레시피 DB 업로드 ---
 elif menu == "3. 레시피 DB 업로드":
     st.subheader("🍳 표준 메뉴 레시피(BOM) DB 관리")
+    
+    if not is_admin:
+        st.info("⚠️ 레시피 파일 업로드 및 데이터 덮어쓰기는 **관리자만 가능**합니다. (좌측 메뉴에서 비밀번호 입력)")
+    
     st.markdown("💡 판매용 메뉴의 '프랩완성중량(판매가)' 칸에 **판매가격(예: 26000)**을 적으면 초기 가격으로 셋팅됩니다.")
     
     template_df = pd.DataFrame({
@@ -383,43 +401,45 @@ elif menu == "3. 레시피 DB 업로드":
         mime="text/csv",
     )
     
-    with st.expander("📂 엑셀 파일로 레시피 일괄 덮어쓰기"):
-        uploaded_bom = st.file_uploader("메뉴 레시피 엑셀(CSV) 업로드", type=["xlsx", "csv"])
-        if uploaded_bom:
-            df_upload = pd.read_excel(uploaded_bom) if uploaded_bom.name.endswith('.xlsx') else pd.read_csv(uploaded_bom)
-            
-            if st.button("⚠️ 기존 레시피를 모두 지우고 이 엑셀 데이터로 덮어쓰기"):
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM menu_bom") 
+    # 💡 관리자만 업로더 창이 보이도록 설정
+    if is_admin:
+        with st.expander("📂 엑셀 파일로 레시피 일괄 덮어쓰기 (관리자 전용)"):
+            uploaded_bom = st.file_uploader("메뉴 레시피 엑셀(CSV) 업로드", type=["xlsx", "csv"])
+            if uploaded_bom:
+                df_upload = pd.read_excel(uploaded_bom) if uploaded_bom.name.endswith('.xlsx') else pd.read_csv(uploaded_bom)
                 
-                if '비고' not in df_upload.columns:
-                    df_upload['비고'] = ""
-                
-                qty_col = '투입량(g)' if '투입량(g)' in df_upload.columns else ('투입량(g/EA)' if '투입량(g/EA)' in df_upload.columns else df_upload.columns[4])
-                weight_col = '프랩완성중량(판매가)' if '프랩완성중량(판매가)' in df_upload.columns else ('프랩완성중량(g)' if '프랩완성중량(g)' in df_upload.columns else ('판매가(완성중량)' if '판매가(완성중량)' in df_upload.columns else df_upload.columns[2]))
-
-                for _, row in df_upload.iterrows():
-                    remarks_val = str(row['비고']) if pd.notna(row['비고']) else ""
-                    menu_cat = str(row['메뉴분류']).strip()
-                    m_name = str(row['메뉴명']).strip()
-                    ing_name = str(row['구성_식재료명']).strip() 
-                    w_val = float(row[weight_col]) if pd.notna(row[weight_col]) else 0.0
+                if st.button("⚠️ 기존 레시피를 모두 지우고 이 엑셀 데이터로 덮어쓰기"):
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM menu_bom") 
                     
-                    if menu_cat != '프랩':
-                        if w_val > 0:
-                            cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (m_name, w_val))
-                        else:
-                            cursor.execute("INSERT OR IGNORE INTO menu_prices (menu_name, sell_price) VALUES (?, 0)", (m_name,))
+                    if '비고' not in df_upload.columns:
+                        df_upload['비고'] = ""
+                    
+                    qty_col = '투입량(g)' if '투입량(g)' in df_upload.columns else ('투입량(g/EA)' if '투입량(g/EA)' in df_upload.columns else df_upload.columns[4])
+                    weight_col = '프랩완성중량(판매가)' if '프랩완성중량(판매가)' in df_upload.columns else ('프랩완성중량(g)' if '프랩완성중량(g)' in df_upload.columns else ('판매가(완성중량)' if '판매가(완성중량)' in df_upload.columns else df_upload.columns[2]))
 
-                    cursor.execute("""
-                        INSERT INTO menu_bom (menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (menu_cat, m_name, w_val, ing_name, row[qty_col], remarks_val))
-                conn.commit()
-                conn.close()
-                st.success("레시피 DB 업로드 성공! (엑셀에 명시된 판매가가 종합분석표에 덮어써졌습니다)")
-                st.rerun()
+                    for _, row in df_upload.iterrows():
+                        remarks_val = str(row['비고']) if pd.notna(row['비고']) else ""
+                        menu_cat = str(row['메뉴분류']).strip()
+                        m_name = str(row['메뉴명']).strip()
+                        ing_name = str(row['구성_식재료명']).strip() 
+                        w_val = float(row[weight_col]) if pd.notna(row[weight_col]) else 0.0
+                        
+                        if menu_cat != '프랩':
+                            if w_val > 0:
+                                cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (m_name, w_val))
+                            else:
+                                cursor.execute("INSERT OR IGNORE INTO menu_prices (menu_name, sell_price) VALUES (?, 0)", (m_name,))
+
+                        cursor.execute("""
+                            INSERT INTO menu_bom (menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (menu_cat, m_name, w_val, ing_name, row[qty_col], remarks_val))
+                    conn.commit()
+                    conn.close()
+                    st.success("레시피 DB 업로드 성공! (엑셀에 명시된 판매가가 종합분석표에 덮어써졌습니다)")
+                    st.rerun()
 
     conn = get_connection()
     df_bom_view = pd.read_sql_query("SELECT id, menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks FROM menu_bom", conn)
@@ -427,79 +447,84 @@ elif menu == "3. 레시피 DB 업로드":
 
     if not df_bom_view.empty:
         st.markdown("#### 📋 현재 등록된 레시피 상세 내역")
+        # 💡 관리자가 아니면 편집 불가(disabled) 처리
         edited_bom = st.data_editor(
             df_bom_view,
             column_config={
                 "id": None, 
-                "menu_type": st.column_config.SelectboxColumn("메뉴분류", options=["프랩", "최종메뉴", "점심특선", "추가메뉴", "주류/음료"]),
-                "menu_name": "메뉴명",
-                "sell_price_or_weight": st.column_config.NumberColumn("프랩완성중량(판매가)", format="%d"),
-                "ingredient_name": "구성 식재료명",
-                "input_qty": st.column_config.NumberColumn("투입량(g/EA)", format="%.1f"),
-                "remarks": "비고"
+                "menu_type": st.column_config.SelectboxColumn("메뉴분류", options=["프랩", "최종메뉴", "점심특선", "추가메뉴", "주류/음료"], disabled=not is_admin),
+                "menu_name": st.column_config.TextColumn("메뉴명", disabled=not is_admin),
+                "sell_price_or_weight": st.column_config.NumberColumn("프랩완성중량(판매가)", format="%d", disabled=not is_admin),
+                "ingredient_name": st.column_config.TextColumn("구성 식재료명", disabled=not is_admin),
+                "input_qty": st.column_config.NumberColumn("투입량(g/EA)", format="%.1f", disabled=not is_admin),
+                "remarks": st.column_config.TextColumn("비고", disabled=not is_admin)
             },
-            num_rows="dynamic", use_container_width=True
+            num_rows="dynamic" if is_admin else "fixed", use_container_width=True
         )
-        if st.button("저장: 수정된 레시피 표 내용 반영하기"):
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM menu_bom")
-            for _, row in edited_bom.iterrows():
-                if pd.notna(row['menu_name']) and pd.notna(row['ingredient_name']):
-                    remarks_val = str(row['remarks']) if pd.notna(row['remarks']) else ""
-                    m_name = str(row['menu_name']).strip()
-                    menu_cat = str(row['menu_type']).strip()
-                    ing_name = str(row['ingredient_name']).strip()
-                    w_val = float(row['sell_price_or_weight'])
-                    
-                    if menu_cat != '프랩':
-                        if w_val > 0:
-                            cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (m_name, w_val))
-                        else:
-                            cursor.execute("INSERT OR IGNORE INTO menu_prices (menu_name, sell_price) VALUES (?, 0)", (m_name,))
-                            
-                    cursor.execute("""
-                        INSERT INTO menu_bom (menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (menu_cat, m_name, w_val, ing_name, row['input_qty'], remarks_val))
-            conn.commit()
-            conn.close()
-            st.success("레시피가 안전하게 수정되었습니다.")
-            st.rerun()
+        if is_admin:
+            if st.button("저장: 수정된 레시피 표 내용 반영하기"):
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM menu_bom")
+                for _, row in edited_bom.iterrows():
+                    if pd.notna(row['menu_name']) and pd.notna(row['ingredient_name']):
+                        remarks_val = str(row['remarks']) if pd.notna(row['remarks']) else ""
+                        m_name = str(row['menu_name']).strip()
+                        menu_cat = str(row['menu_type']).strip()
+                        ing_name = str(row['ingredient_name']).strip()
+                        w_val = float(row['sell_price_or_weight'])
+                        
+                        if menu_cat != '프랩':
+                            if w_val > 0:
+                                cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (m_name, w_val))
+                            else:
+                                cursor.execute("INSERT OR IGNORE INTO menu_prices (menu_name, sell_price) VALUES (?, 0)", (m_name,))
+                                
+                        cursor.execute("""
+                            INSERT INTO menu_bom (menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (menu_cat, m_name, w_val, ing_name, row['input_qty'], remarks_val))
+                conn.commit()
+                conn.close()
+                st.success("레시피가 안전하게 수정되었습니다.")
+                st.rerun()
 
 # --- 기능 4: 식재료 DB 마스터 관리 ---
 elif menu == "4. 식재료 DB 마스터 관리":
     st.subheader("📝 식재료 마스터 DB 관리")
     
-    with st.expander("➕ 신규 식재료 개별 등록 (수동)"):
-        with st.form("new_item_form"):
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                item_code = st.text_input("상품코드")
-                item_name = st.text_input("상품명")
-            with col2:
-                tax_type = st.selectbox("세금 유형", ["과세", "면세"])
-                supply_price = st.number_input("공급가(원)", min_value=0.0, step=100.0)
-            with col3:
-                loss_rate = st.number_input("손실률(%)", min_value=0.0, max_value=100.0, step=0.1)
-                total_capacity = st.number_input("총용량(g)", min_value=1.0, value=1000.0)
-            with col4:
-                unit_type = st.selectbox("단위", ["g", "EA", "ml"]) 
-            
-            if st.form_submit_button("식재료 DB에 추가"):
-                if item_code and item_name:
-                    conn = get_connection()
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO ingredients (item_code, item_name, tax_type, supply_price, loss_rate, total_capacity, unit)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (item_code.strip(), item_name.strip(), tax_type, supply_price, loss_rate, total_capacity, unit_type))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"[{item_name}] 저장 완료!")
-                    st.rerun()
-                else:
-                    st.error("상품코드와 상품명을 모두 입력해주세요.")
+    if is_admin:
+        with st.expander("➕ 신규 식재료 개별 등록 (수동)"):
+            with st.form("new_item_form"):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    item_code = st.text_input("상품코드")
+                    item_name = st.text_input("상품명")
+                with col2:
+                    tax_type = st.selectbox("세금 유형", ["과세", "면세"])
+                    supply_price = st.number_input("공급가(원)", min_value=0.0, step=100.0)
+                with col3:
+                    loss_rate = st.number_input("손실률(%)", min_value=0.0, max_value=100.0, step=0.1)
+                    total_capacity = st.number_input("총용량(g)", min_value=1.0, value=1000.0)
+                with col4:
+                    unit_type = st.selectbox("단위", ["g", "EA", "ml"]) 
+                
+                if st.form_submit_button("식재료 DB에 추가"):
+                    if item_code and item_name:
+                        conn = get_connection()
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO ingredients (item_code, item_name, tax_type, supply_price, loss_rate, total_capacity, unit)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (item_code.strip(), item_name.strip(), tax_type, supply_price, loss_rate, total_capacity, unit_type))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"[{item_name}] 저장 완료!")
+                        st.rerun()
+                    else:
+                        st.error("상품코드와 상품명을 모두 입력해주세요.")
+    else:
+        st.info("💡 식재료 신규 등록 및 수정은 **관리자 모드**에서만 가능합니다.")
 
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM ingredients", conn)
@@ -514,109 +539,117 @@ elif menu == "4. 식재료 DB 마스터 관리":
         edited_df = st.data_editor(
             display_df[['item_code', 'item_name', 'tax_type', 'supply_price', 'loss_rate', 'total_capacity', 'unit', '최종단가(g당)']],
             column_config={
-                "item_code": "상품코드", "item_name": "상품명", "tax_type": "세금유형",
-                "supply_price": "공급가(원)", "loss_rate": "손실률(%)", 
-                "total_capacity": "총용량(g)", "unit": st.column_config.TextColumn("단위", default="g"),
-                "최종단가(g당)": st.column_config.NumberColumn("단위당 단가", format="%.3f 원")
+                "item_code": st.column_config.TextColumn("상품코드", disabled=True), 
+                "item_name": st.column_config.TextColumn("상품명", disabled=not is_admin), 
+                "tax_type": st.column_config.TextColumn("세금유형", disabled=not is_admin),
+                "supply_price": st.column_config.NumberColumn("공급가(원)", disabled=not is_admin), 
+                "loss_rate": st.column_config.NumberColumn("손실률(%)", disabled=not is_admin), 
+                "total_capacity": st.column_config.NumberColumn("총용량(g)", disabled=not is_admin), 
+                "unit": st.column_config.TextColumn("단위", disabled=True),
+                "최종단가(g당)": st.column_config.NumberColumn("단위당 단가", format="%.3f 원", disabled=True)
             },
-            disabled=["최종단가(g당)", "item_code", "unit"], num_rows="dynamic", use_container_width=True
+            num_rows="dynamic" if is_admin else "fixed", use_container_width=True
         )
         
-        if st.button("🔄 수정된 데이터 반영"):
-            cursor = conn.cursor()
-            for idx, row in edited_df.iterrows():
-                cursor.execute("""
-                    UPDATE ingredients SET item_name=?, tax_type=?, supply_price=?, loss_rate=?, total_capacity=?, unit='g' WHERE item_code=?
-                """, (row['item_name'].strip(), row['tax_type'], row['supply_price'], row['loss_rate'], row['total_capacity'], row['item_code']))
-            conn.commit()
-            st.success("동기화 완료!")
-            st.rerun()
+        if is_admin:
+            if st.button("🔄 수정된 데이터 반영"):
+                cursor = conn.cursor()
+                for idx, row in edited_df.iterrows():
+                    cursor.execute("""
+                        UPDATE ingredients SET item_name=?, tax_type=?, supply_price=?, loss_rate=?, total_capacity=?, unit='g' WHERE item_code=?
+                    """, (row['item_name'].strip(), row['tax_type'], row['supply_price'], row['loss_rate'], row['total_capacity'], row['item_code']))
+                conn.commit()
+                st.success("동기화 완료!")
+                st.rerun()
     conn.close()
 
 # --- 기능 5: 푸디스트 및 외부식재료 DB 동기화 ---
 elif menu == "5. 푸디스트 및 외부식재료 DB 동기화":
     st.subheader("🔄 물류 단가 스마트 자동 업데이트")
     
-    uploaded_file = st.file_uploader("푸디스트 발주서 엑셀 파일 업로드", type=["xlsx", "csv"])
-    
-    if uploaded_file:
-        df_order = pd.read_excel(uploaded_file) if not uploaded_file.name.endswith('.csv') else pd.read_csv(uploaded_file)
-        if st.button("🚀 푸디스트 데이터 자동 파싱 및 단가 갱신"):
-            conn = get_connection()
-            cursor = conn.cursor()
-            
-            updated_items = []
-            new_items = []
-            update_count = 0 
-            
-            weight_col = next((col for col in df_order.columns if '총중량' in str(col).replace(" ", "")), None)
-            qty_col = next((col for col in df_order.columns if '수량' == str(col).strip()), None)
-            tax_col = next((col for col in df_order.columns if '부가세' in str(col)), None)
-            price_col = next((col for col in df_order.columns if '단가' == str(col).strip()), None)
-            
-            if not price_col:
-                st.error("엑셀 파일에 '단가' 열이 존재하지 않습니다.")
-            else:
-                for idx, row in df_order.dropna(subset=['상품코드']).iterrows():
-                    code = str(row['상품코드']).strip()
-                    name = str(row['상품명']).strip()
-                    price = float(row[price_col]) if pd.notna(row[price_col]) else 0.0
-                    
-                    t_type = "면세"
-                    if tax_col and pd.notna(row[tax_col]):
-                        try:
-                            t_type = "과세" if float(row[tax_col]) > 0 else "면세"
-                        except:
-                            pass
-                    
-                    total_weight_kg = 0.0
-                    if weight_col and pd.notna(row[weight_col]):
-                        try: total_weight_kg = float(row[weight_col])
-                        except: pass
+    if not is_admin:
+        st.warning("⛔ 푸디스트 발주서 엑셀 업로드(단가 동기화) 기능은 **관리자 전용**입니다.")
+    else:
+        uploaded_file = st.file_uploader("푸디스트 발주서 엑셀 파일 업로드", type=["xlsx", "csv"])
+        
+        if uploaded_file:
+            df_order = pd.read_excel(uploaded_file) if not uploaded_file.name.endswith('.csv') else pd.read_csv(uploaded_file)
+            if st.button("🚀 푸디스트 데이터 자동 파싱 및 단가 갱신"):
+                conn = get_connection()
+                cursor = conn.cursor()
+                
+                updated_items = []
+                new_items = []
+                update_count = 0 
+                
+                weight_col = next((col for col in df_order.columns if '총중량' in str(col).replace(" ", "")), None)
+                qty_col = next((col for col in df_order.columns if '수량' == str(col).strip()), None)
+                tax_col = next((col for col in df_order.columns if '부가세' in str(col)), None)
+                price_col = next((col for col in df_order.columns if '단가' == str(col).strip()), None)
+                
+                if not price_col:
+                    st.error("엑셀 파일에 '단가' 열이 존재하지 않습니다.")
+                else:
+                    for idx, row in df_order.dropna(subset=['상품코드']).iterrows():
+                        code = str(row['상품코드']).strip()
+                        name = str(row['상품명']).strip()
+                        price = float(row[price_col]) if pd.notna(row[price_col]) else 0.0
                         
-                    qty = 1.0
-                    if qty_col and pd.notna(row[qty_col]):
-                        try: qty = float(row[qty_col]) if float(row[qty_col]) > 0 else 1.0
-                        except: pass
+                        t_type = "면세"
+                        if tax_col and pd.notna(row[tax_col]):
+                            try:
+                                t_type = "과세" if float(row[tax_col]) > 0 else "면세"
+                            except:
+                                pass
+                        
+                        total_weight_kg = 0.0
+                        if weight_col and pd.notna(row[weight_col]):
+                            try: total_weight_kg = float(row[weight_col])
+                            except: pass
+                            
+                        qty = 1.0
+                        if qty_col and pd.notna(row[qty_col]):
+                            try: qty = float(row[qty_col]) if float(row[qty_col]) > 0 else 1.0
+                            except: pass
 
-                    if total_weight_kg > 0:
-                        capacity = (total_weight_kg / qty) * 1000.0
-                    else:
-                        capacity = 1000.0
-                    
-                    item_unit = 'g' 
-                    
-                    cursor.execute("SELECT supply_price FROM ingredients WHERE item_code=?", (code,))
-                    db_result = cursor.fetchone()
-                    
-                    if db_result:
-                        old_price = db_result[0]
-                        cursor.execute("UPDATE ingredients SET supply_price=?, tax_type=?, total_capacity=?, unit=? WHERE item_code=?", (price, t_type, capacity, item_unit, code))
-                        update_count += 1
+                        if total_weight_kg > 0:
+                            capacity = (total_weight_kg / qty) * 1000.0
+                        else:
+                            capacity = 1000.0
                         
-                        if old_price != price:
-                            diff = price - old_price
-                            diff_str = f"🔺 +{int(diff):,}원" if diff > 0 else f"🔻 {int(diff):,}원"
-                            cursor.execute("INSERT INTO price_history (item_code, item_name, old_price, new_price, change_amount) VALUES (?, ?, ?, ?, ?)", (code, name, old_price, price, diff))
-                            updated_items.append({"상품명": name, "용량": f"{int(capacity)}g", "기존단가": f"{int(old_price):,}원", "변경단가": f"{int(price):,}원", "변동액": diff_str})
-                    else:
-                        cursor.execute("INSERT INTO ingredients (item_code, item_name, tax_type, supply_price, loss_rate, total_capacity, unit) VALUES (?, ?, ?, ?, 0.0, ?, ?)", (code, name, t_type, price, capacity, item_unit))
-                        new_items.append({"상품명": name, "용량": f"{int(capacity)}g", "신규등록단가": f"{int(price):,}원"})
+                        item_unit = 'g' 
                         
-                conn.commit()
-                conn.close()
-                
-                st.success(f"데이터 스마트 분석 완료! (기존 데이터 교정: {update_count}건, 신규 등록: {len(new_items)}건)")
-                
-                col_u, col_n = st.columns(2)
-                with col_u:
-                    with st.expander(f"🔄 단가 변동 내역 상세 ({len(updated_items)}건)", expanded=True):
-                        if updated_items: st.dataframe(pd.DataFrame(updated_items), use_container_width=True, hide_index=True)
-                        else: st.info("변동된 품목이 없습니다.")
-                with col_n:
-                    with st.expander(f"🆕 신규 등록 상세 (세금/중량 매칭 결과) ({len(new_items)}건)", expanded=True):
-                        if new_items: st.dataframe(pd.DataFrame(new_items), use_container_width=True, hide_index=True)
-                        else: st.info("신규 추가된 품목이 없습니다.")
+                        cursor.execute("SELECT supply_price FROM ingredients WHERE item_code=?", (code,))
+                        db_result = cursor.fetchone()
+                        
+                        if db_result:
+                            old_price = db_result[0]
+                            cursor.execute("UPDATE ingredients SET supply_price=?, tax_type=?, total_capacity=?, unit=? WHERE item_code=?", (price, t_type, capacity, item_unit, code))
+                            update_count += 1
+                            
+                            if old_price != price:
+                                diff = price - old_price
+                                diff_str = f"🔺 +{int(diff):,}원" if diff > 0 else f"🔻 {int(diff):,}원"
+                                cursor.execute("INSERT INTO price_history (item_code, item_name, old_price, new_price, change_amount) VALUES (?, ?, ?, ?, ?)", (code, name, old_price, price, diff))
+                                updated_items.append({"상품명": name, "용량": f"{int(capacity)}g", "기존단가": f"{int(old_price):,}원", "변경단가": f"{int(price):,}원", "변동액": diff_str})
+                        else:
+                            cursor.execute("INSERT INTO ingredients (item_code, item_name, tax_type, supply_price, loss_rate, total_capacity, unit) VALUES (?, ?, ?, ?, 0.0, ?, ?)", (code, name, t_type, price, capacity, item_unit))
+                            new_items.append({"상품명": name, "용량": f"{int(capacity)}g", "신규등록단가": f"{int(price):,}원"})
+                            
+                    conn.commit()
+                    conn.close()
+                    
+                    st.success(f"데이터 스마트 분석 완료! (기존 데이터 교정: {update_count}건, 신규 등록: {len(new_items)}건)")
+                    
+                    col_u, col_n = st.columns(2)
+                    with col_u:
+                        with st.expander(f"🔄 단가 변동 내역 상세 ({len(updated_items)}건)", expanded=True):
+                            if updated_items: st.dataframe(pd.DataFrame(updated_items), use_container_width=True, hide_index=True)
+                            else: st.info("변동된 품목이 없습니다.")
+                    with col_n:
+                        with st.expander(f"🆕 신규 등록 상세 (세금/중량 매칭 결과) ({len(new_items)}건)", expanded=True):
+                            if new_items: st.dataframe(pd.DataFrame(new_items), use_container_width=True, hide_index=True)
+                            else: st.info("신규 추가된 품목이 없습니다.")
 
 # --- 기능 6: 물류 단가 변동 이력 분석 ---
 elif menu == "6. 📉 단가 변동 이력 분석 (History)":
