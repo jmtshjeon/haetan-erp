@@ -6,9 +6,9 @@ import io
 import re
 
 # --- [설정] 관리자 비밀번호 ---
-ADMIN_PASSWORD = "1234"  # 💡 원하시는 비밀번호로 변경하세요!
+ADMIN_PASSWORD = "1234"  
 
-# --- 1. 데이터베이스(SQLite) 초기화 및 자동 클렌징 ---
+# --- 1. 데이터베이스(SQLite) 초기화 ---
 DB_FILE = "haetan_cost_management.db"
 
 def init_db():
@@ -76,7 +76,9 @@ init_db()
 def get_connection():
     return sqlite3.connect(DB_FILE)
 
-# --- 단가 계산 핵심 엔진 ---
+# 💡 [핵심 최적화] 데이터 연산 캐싱 적용
+# 이 데코레이터가 붙은 함수는 결과값을 메모리에 저장하여 앱 멈춤 현상을 방지합니다.
+@st.cache_data
 def calculate_unit_prices():
     conn = get_connection()
     df_ing = pd.read_sql_query("SELECT * FROM ingredients", conn)
@@ -139,6 +141,19 @@ def calculate_unit_prices():
 # --- 2. Streamlit UI 공통 설정 ---
 st.set_page_config(page_title="해탄 원가관리 시스템", page_icon="🦑", layout="wide")
 
+# 💡 [핵심 최적화] 세션 유지(Keep-Alive) 스크립트 삽입
+# 브라우저가 열려있는 동안 1분마다 백그라운드 신호를 보내 세션 끊김을 방지합니다.
+st.components.v1.html(
+    """
+    <script>
+    setInterval(function() {
+        window.parent.postMessage('keepAlive', '*');
+    }, 60000);
+    </script>
+    """,
+    height=0, width=0
+)
+
 if os.path.exists("logo.png"):
     st.sidebar.image("logo.png", use_container_width=True)
 else:
@@ -158,7 +173,6 @@ menu = st.sidebar.radio(
     ]
 )
 
-# 💡 관리자 권한 인증 로직 추가
 st.sidebar.markdown("---")
 input_pw = st.sidebar.text_input("🔐 관리자 비밀번호", type="password", help="데이터 업로드 및 수정을 위한 관리자 전용 비밀번호입니다.")
 is_admin = (input_pw == ADMIN_PASSWORD)
@@ -248,7 +262,6 @@ if menu == "1. 메뉴 원가 종합분석표":
                 "원가율(%)": "{:.1f}"
             }).map(color_cost_rate, subset=['원가율(%)'])
 
-            # 💡 is_admin이 False이면 표 전체가 수정 불가(disabled=True) 상태가 됨
             edited_df = st.data_editor(
                 styled_df,
                 column_config={
@@ -270,6 +283,7 @@ if menu == "1. 메뉴 원가 종합분석표":
                         cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (row['메뉴명'], row['적용 판매가(원)']))
                     conn.commit()
                     conn.close()
+                    st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
                     st.success("판매가가 성공적으로 변경 및 재계산되었습니다.")
                     st.rerun()
         else:
@@ -401,7 +415,6 @@ elif menu == "3. 레시피 DB 업로드":
         mime="text/csv",
     )
     
-    # 💡 관리자만 업로더 창이 보이도록 설정
     if is_admin:
         with st.expander("📂 엑셀 파일로 레시피 일괄 덮어쓰기 (관리자 전용)"):
             uploaded_bom = st.file_uploader("메뉴 레시피 엑셀(CSV) 업로드", type=["xlsx", "csv"])
@@ -438,6 +451,7 @@ elif menu == "3. 레시피 DB 업로드":
                         """, (menu_cat, m_name, w_val, ing_name, row[qty_col], remarks_val))
                     conn.commit()
                     conn.close()
+                    st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
                     st.success("레시피 DB 업로드 성공! (엑셀에 명시된 판매가가 종합분석표에 덮어써졌습니다)")
                     st.rerun()
 
@@ -447,7 +461,6 @@ elif menu == "3. 레시피 DB 업로드":
 
     if not df_bom_view.empty:
         st.markdown("#### 📋 현재 등록된 레시피 상세 내역")
-        # 💡 관리자가 아니면 편집 불가(disabled) 처리
         edited_bom = st.data_editor(
             df_bom_view,
             column_config={
@@ -486,6 +499,7 @@ elif menu == "3. 레시피 DB 업로드":
                         """, (menu_cat, m_name, w_val, ing_name, row['input_qty'], remarks_val))
                 conn.commit()
                 conn.close()
+                st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
                 st.success("레시피가 안전하게 수정되었습니다.")
                 st.rerun()
 
@@ -519,6 +533,7 @@ elif menu == "4. 식재료 DB 마스터 관리":
                         """, (item_code.strip(), item_name.strip(), tax_type, supply_price, loss_rate, total_capacity, unit_type))
                         conn.commit()
                         conn.close()
+                        st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
                         st.success(f"[{item_name}] 저장 완료!")
                         st.rerun()
                     else:
@@ -559,6 +574,7 @@ elif menu == "4. 식재료 DB 마스터 관리":
                         UPDATE ingredients SET item_name=?, tax_type=?, supply_price=?, loss_rate=?, total_capacity=?, unit='g' WHERE item_code=?
                     """, (row['item_name'].strip(), row['tax_type'], row['supply_price'], row['loss_rate'], row['total_capacity'], row['item_code']))
                 conn.commit()
+                st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
                 st.success("동기화 완료!")
                 st.rerun()
     conn.close()
@@ -568,13 +584,13 @@ elif menu == "5. 푸디스트 및 외부식재료 DB 동기화":
     st.subheader("🔄 물류 단가 스마트 자동 업데이트")
     
     if not is_admin:
-        st.warning("⛔ 푸디스트 발주서 엑셀 업로드(단가 동기화) 기능은 **관리자 전용**입니다.")
+        st.warning("⛔ 발주서 엑셀 업로드(단가 동기화) 기능은 **관리자 전용**입니다.")
     else:
-        uploaded_file = st.file_uploader("푸디스트 발주서 엑셀 파일 업로드", type=["xlsx", "csv"])
+        uploaded_file = st.file_uploader("발주서 엑셀 파일 업로드", type=["xlsx", "csv"])
         
         if uploaded_file:
             df_order = pd.read_excel(uploaded_file) if not uploaded_file.name.endswith('.csv') else pd.read_csv(uploaded_file)
-            if st.button("🚀 푸디스트 데이터 자동 파싱 및 단가 갱신"):
+            if st.button("🚀 데이터 자동 파싱 및 단가 갱신"):
                 conn = get_connection()
                 cursor = conn.cursor()
                 
@@ -638,6 +654,7 @@ elif menu == "5. 푸디스트 및 외부식재료 DB 동기화":
                             
                     conn.commit()
                     conn.close()
+                    st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
                     
                     st.success(f"데이터 스마트 분석 완료! (기존 데이터 교정: {update_count}건, 신규 등록: {len(new_items)}건)")
                     
