@@ -153,47 +153,49 @@ def render_recipe_page(st, get_connection, is_admin):
         f'<p style="margin:2px 0 8px">{escape(recipe["servings"])}</p>',
         unsafe_allow_html=True,
     )
-    cover_column, ingredients = st.columns([1, 2])
+    cover_column, ingredients = st.columns([2, 3])
     with cover_column:
         cover = find_photo(ROOT / "메뉴이미지", menu)
         if cover:
-            st.image(str(cover), width=190)
+            st.image(str(cover), width=380)
         else:
             st.info("자료 사진 없음")
     with ingredients:
         if rows:
             labels = recipe.get("ingredient_labels", {})
             toppings = set(recipe.get("toppings", []))
-            table_rows = []
             for heading, group in (
-                ("", [row for row in rows if row[0].strip() not in toppings]),
+                ("조리 재료", [row for row in rows if row[0].strip() not in toppings]),
                 ("제공 전 토핑", [row for row in rows if row[0].strip() in toppings]),
             ):
                 if not group:
                     continue
-                if heading:
-                    table_rows.append(f'<tr><th colspan="2" style="text-align:left;padding:9px 8px 3px">{heading}</th></tr>')
+                table_rows = []
                 for name, quantity, unit in group:
                     label = escape(labels.get(name.strip(), name))
                     amount = escape(f"{quantity:g} {unit or ''}".strip())
                     table_rows.append(f"<tr><td>{label}</td><td>{amount}</td></tr>")
-            st.markdown(
-                '<table class="recipe-table"><thead><tr>'
-                '<th scope="col">재료</th><th scope="col">투입량</th></tr></thead><tbody>'
-                + "".join(table_rows) + "</tbody></table>",
-                unsafe_allow_html=True,
-            )
+                st.markdown(f"**{heading}**")
+                st.markdown(
+                    '<table class="recipe-table"><thead><tr>'
+                    '<th scope="col">재료</th><th scope="col">투입량</th></tr></thead><tbody>'
+                    + "".join(table_rows) + "</tbody></table>",
+                    unsafe_allow_html=True,
+                )
         else:
             st.info("원가 데이터에 등록된 재료가 없습니다.")
 
     st.divider()
     st.markdown("### 조리법")
     preparation = recipe.get("preparation")
+    sections = (["조리 전 준비"] if preparation else []) + ["조리", "제공법"]
+    numbered = dict(zip(sections, ("①", "②", "③")))
+    st.caption(" → ".join(f"{numbered[section]} {section}" for section in sections))
     if preparation:
-        st.markdown("#### 조리 전 준비")
+        st.markdown("#### ① 조리 전 준비")
         st.markdown("\n".join(f"- {item}" for item in preparation))
         st.divider()
-    st.markdown("#### 조리")
+    st.markdown(f"#### {numbered['조리']} 조리")
     for index, step in enumerate(recipe["steps"], start=1):
         if len(recipe["steps"]) > 1:
             st.markdown(f"**{step['title']}**")
@@ -227,7 +229,7 @@ def render_recipe_page(st, get_connection, is_admin):
                     unsafe_allow_html=True,
                 )
     st.divider()
-    st.markdown("### 제공법")
+    st.markdown(f"#### {numbered['제공법']} 제공법")
     st.write(recipe.get("serving_method") or "제공 방법 추가 예정")
     serving_caution = recipe.get("serving_caution", "").strip()
     if serving_caution:
