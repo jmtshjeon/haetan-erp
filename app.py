@@ -851,6 +851,23 @@ elif menu == "식재료단가 · 푸디스트 기준":
     with closing(get_connection()) as conn:
         price_date = price_update_date(conn)
     st.caption(f"기준날짜 · {price_date or '기록 없음'}")
+    def format_change(value):
+        if pd.isna(value):
+            return "—"
+        if value > 0:
+            return f"▲ +{int(value):,}원"
+        if value < 0:
+            return f"▼ {int(value):,}원"
+        return "0원"
+
+    def color_changes(values):
+        return [
+            "color: #d32f2f; font-weight: bold" if value.startswith("▲")
+            else "color: #1976d2; font-weight: bold" if value.startswith("▼")
+            else ""
+            for value in values
+        ]
+
     current, history = st.tabs(["현재 단가", "변동 이력"])
     with current:
         with closing(get_connection()) as conn:
@@ -876,11 +893,14 @@ elif menu == "식재료단가 · 푸디스트 기준":
                 lambda col: col.str.contains(keyword, case=False, na=False, regex=False)
             )
             ingredients = ingredients[match.any(axis=1)]
-        st.dataframe(ingredients.style.format({
-                         "기준단가": lambda value: f"{int(value):,}원", "포장용량": "{:,.0f}",
-                         "변동액": lambda value: f"{int(value):+,}원", "변동률": "{:+.1f}%",
-                     }, na_rep="—"),
-                     hide_index=True, use_container_width=True)
+        ingredients = ingredients.assign(
+            변동액=ingredients["변동액"].map(format_change),
+            변동률=ingredients["변동률"].map(lambda value: "—" if pd.isna(value) else f"{value:+.1f}%"),
+        )
+        styled_prices = ingredients.style.format({
+            "기준단가": lambda value: f"{int(value):,}원", "포장용량": "{:,.0f}",
+        }, na_rep="—").apply(color_changes, subset=["변동액"])
+        st.dataframe(styled_prices, hide_index=True, use_container_width=True)
     with history:
         conn = get_connection()
         df_hist = pd.read_sql_query("SELECT update_date, item_code, item_name, old_price, new_price, change_amount FROM price_history ORDER BY update_date DESC, id DESC", conn)
@@ -899,21 +919,6 @@ elif menu == "식재료단가 · 푸디스트 기준":
                 filtered_df = df_hist[match.any(axis=1)]
             st.caption(f"변동 이력 {len(filtered_df):,}건")
             
-            def format_change(value):
-                if value > 0:
-                    return f"▲ +{int(value):,}원"
-                if value < 0:
-                    return f"▼ {int(value):,}원"
-                return "—"
-
-            def color_changes(values):
-                return [
-                    "color: #d32f2f; font-weight: bold" if value.startswith("▲")
-                    else "color: #1976d2; font-weight: bold" if value.startswith("▼")
-                    else ""
-                    for value in values
-                ]
-
             display_df = filtered_df.copy()
             display_df['변동 내역'] = display_df['change_amount'].apply(format_change)
             display_df['old_price'] = display_df['old_price'].apply(lambda x: f"{int(x):,}원")
