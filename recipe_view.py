@@ -233,9 +233,42 @@ def render_selected_recipe(st, get_connection, is_admin, selected):
         f'<p style="margin:2px 0 8px">{escape(basis)}</p>',
         unsafe_allow_html=True,
     )
+    cover = find_menu_photo(menu)
+    groups = recipe_ingredient_groups(recipe, rows, category)
+    try:
+        from recipe_pdf import build_recipe_pdf
+
+        sections = [("text", basis)]
+        if cover:
+            sections.append(("image", cover))
+        for heading, group in groups:
+            sections.extend((("heading", heading), ("table", [("재료", "투입량"), *group])))
+        if not groups:
+            sections.append(("text", "원가 데이터에 등록된 재료가 없습니다."))
+        sections.extend(recipe_instruction_sections(recipe_file, recipe, photos))
+        for prep_name, (weight, prep_rows) in prep_batches.items():
+            prep_file, prep_recipe = load_prep_recipe(prep_name)
+            sections.extend((("heading", f"필요한 프랩 · {prep_name}"),
+                             ("text", prep_yield_text(weight))))
+            for _, group in recipe_ingredient_groups(prep_recipe or {}, prep_rows, "프랩"):
+                sections.append(("table", [("재료", "배치 투입량"), *group]))
+            if prep_recipe:
+                sections.extend(recipe_instruction_sections(prep_file, prep_recipe, {}))
+            else:
+                sections.append(("text", "프랩 제조법 확인이 필요합니다."))
+        st.download_button(
+            "이 메뉴 조리 매뉴얼 PDF 다운로드",
+            data=lambda: build_recipe_pdf(menu, sections),
+            file_name=f"{menu.translate(str.maketrans('/\\:*?\"<>|', '／＼：＊？＂＜＞｜'))}_조리매뉴얼.pdf",
+            mime="application/pdf",
+            key=f"recipe-pdf:{category}/{menu}",
+            on_click="ignore",
+        )
+    except (ImportError, OSError, ValueError):
+        st.caption("PDF를 준비하지 못했습니다. 아래에서 조리 매뉴얼을 확인할 수 있습니다.")
+
     cover_column, ingredients = st.columns([2, 3])
     with cover_column:
-        cover = find_menu_photo(menu)
         if cover:
             cover_key = sha256(f"{category}/{menu}".encode("utf-8")).hexdigest()
             with st.container(key=f"recipe-cover-{cover_key}"):
@@ -244,20 +277,9 @@ def render_selected_recipe(st, get_connection, is_admin, selected):
             st.info("자료 사진 없음")
     with ingredients:
         if rows:
-            labels = recipe.get("ingredient_labels", {})
-            toppings = set(recipe.get("toppings", []))
-            for heading, group in (
-                ("1회 제조 재료" if category == "프랩" else "조리 재료",
-                 [row for row in rows if row[0].strip() not in toppings]),
-                ("제공 전 토핑", [row for row in rows if row[0].strip() in toppings]),
-            ):
-                if not group:
-                    continue
-                table_rows = []
-                for name, quantity, unit in group:
-                    label = escape(labels.get(name.strip(), name))
-                    amount = escape(f"{quantity:g} {unit or ''}".strip())
-                    table_rows.append(f"<tr><td>{label}</td><td>{amount}</td></tr>")
+            for heading, group in groups:
+                table_rows = [f"<tr><td>{escape(label)}</td><td>{escape(amount)}</td></tr>"
+                              for label, amount in group]
                 st.markdown(
                     f'<table class="recipe-table"><caption>{heading}</caption><thead><tr>'
                     '<th scope="col">재료</th><th scope="col">투입량</th></tr></thead><tbody>'
@@ -276,6 +298,18 @@ def render_selected_recipe(st, get_connection, is_admin, selected):
 
     st.divider()
     render_recipe_instructions(st, recipe_file, recipe, photos)
+
+
+def recipe_ingredient_groups(recipe, rows, category):
+    labels = recipe.get("ingredient_labels", {})
+    toppings = set(recipe.get("toppings", []))
+    ingredients, garnishes = [], []
+    for name, quantity, unit in rows:
+        group = garnishes if name.strip() in toppings else ingredients
+        group.append((labels.get(name.strip(), name), f"{quantity:g} {unit or ''}".strip()))
+    ingredient_heading = "1회 제조 재료" if category == "프랩" else "조리 재료"
+    return [(heading, group) for heading, group in
+            ((ingredient_heading, ingredients), ("제공 전 토핑", garnishes)) if group]
 
 
 def required_prep_batches(conn, menu, rows):
@@ -316,12 +350,17 @@ def prep_yield_text(weight):
     return f"1회 제조 기준 · 총 생산량 {weight:,.3f}".rstrip("0").rstrip(".") + f" g{kilograms}"
 
 
-def render_prep_batch(st, name, weight, rows):
+def load_prep_recipe(name):
     recipe_file = RECIPE_FOLDER / "프랩" / name.replace("/", "／") / "레시피.json"
     try:
         recipe = json.loads(recipe_file.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError, ValueError):
         recipe = None
+    return recipe_file, recipe
+
+
+def render_prep_batch(st, name, weight, rows):
+    recipe_file, recipe = load_prep_recipe(name)
     st.caption(prep_yield_text(weight))
     labels = (recipe or {}).get("ingredient_labels", {})
     st.table([
@@ -332,6 +371,42 @@ def render_prep_batch(st, name, weight, rows):
         st.caption("프랩 제조법 확인이 필요합니다.")
         return
     render_recipe_instructions(st, recipe_file, recipe, {})
+
+
+def step_photo(folder, note, photos, index, position):
+    name = note.get("photo")
+    photo = photos.get(name)
+    if photo is not None:
+        return photo
+    if name and Path(name).name == name and (folder / name).is_file():
+        return folder / name
+    photo = find_photo(folder, f"{index:02}-{position}")
+    return photo or (find_photo(folder, f"{index:02}") if position == 1 else None)
+
+
+def recipe_instruction_sections(recipe_file, recipe, photos):
+    if recipe.get("review_note"):
+        yield "text", recipe["review_note"]
+    if recipe.get("preparation"):
+        yield "heading", "조리 전 준비"
+        for number, item in enumerate(recipe["preparation"], start=1):
+            yield "text", f"{number}. {item}"
+    yield "heading", "조리"
+    for index, step in enumerate(recipe["steps"], start=1):
+        yield "text", f"{index}. {step['title']}"
+        for position in range(1, 4):
+            note = photo_note(step, position)
+            photo = step_photo(recipe_file.parent, note, photos, index, position)
+            if photo:
+                yield "image", photo
+            yield "text", note.get("title")
+            yield "text", note.get("description")
+            if note.get("caution"):
+                yield "warning", f"주의사항 · {note['caution']}"
+    yield "heading", "제공법"
+    yield "text", recipe.get("serving_method") or "제공 방법 추가 예정"
+    if recipe.get("serving_caution"):
+        yield "warning", f"주의사항 · {recipe['serving_caution']}"
 
 
 def render_recipe_instructions(st, recipe_file, recipe, photos):
@@ -353,16 +428,7 @@ def render_recipe_instructions(st, recipe_file, recipe, photos):
         for position, column in enumerate(st.columns(3), start=1):
             photo_column = column.container(border=True)
             note = photo_note(step, position)
-            name = note.get("photo")
-            photo = photos.get(name)
-            if photo is None and name and Path(name).name == name:
-                stored_photo = recipe_file.parent / name
-                if stored_photo.is_file():
-                    photo = str(stored_photo)
-            if photo is None:
-                photo = find_photo(recipe_file.parent, f"{index:02}-{position}")
-            if photo is None and position == 1:
-                photo = find_photo(recipe_file.parent, f"{index:02}")
+            photo = step_photo(recipe_file.parent, note, photos, index, position)
             if photo:
                 photo_column.image(str(photo) if isinstance(photo, Path) else photo, use_container_width=True)
             else:
