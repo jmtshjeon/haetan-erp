@@ -149,6 +149,10 @@ def show_price_update(st, get_connection, record_price_change):
         st.error(str(error))
         return
 
+    price_columns = {
+        name: st.column_config.NumberColumn(name, format="%d 원")
+        for name in ("기존 단가", "조회 단가", "변동액")
+    }
     if changes:
         st.markdown("#### 바뀐 단가")
         signature = sha256(repr(changes).encode("utf-8")).hexdigest()
@@ -164,7 +168,7 @@ def show_price_update(st, get_connection, record_price_change):
         table.insert(0, "반영", select_all)
         edited = st.data_editor(
             table, disabled=[name for name in table if name != "반영"],
-            hide_index=True, use_container_width=True,
+            hide_index=True, use_container_width=True, column_config=price_columns,
             key=f"price_update_editor:{signature}:{revision}",
         )
         selected_codes = set(edited.loc[edited["반영"], "상품코드"])
@@ -190,11 +194,12 @@ def show_price_update(st, get_connection, record_price_change):
                 "다른 상품이나 완성품·부재료 묶음이면 "
                 "기존 단가를 유지하고, 배합 원가가 확인되면 그 값을 직접 수정하세요."
             )
-            st.dataframe(pd.DataFrame(needs_review), hide_index=True, use_container_width=True)
+            st.dataframe(pd.DataFrame(needs_review), hide_index=True, use_container_width=True,
+                         column_config=price_columns)
     if skipped:
         with st.expander(f"원가 연동 대상 아님 · {len(skipped)}개 건너뜀"):
             st.caption("현재 메뉴 원가에 쓰이는 식재료 코드와 연결되지 않은 품목입니다. 실제 사용 품목이 여기 있으면 앱의 등록 코드와 조회 코드를 확인하세요.")
             st.dataframe(
                 pd.DataFrame(skipped)[["상품코드", "조회 상품명", "조회 규격", "조회 단가"]],
-                hide_index=True, use_container_width=True,
+                hide_index=True, use_container_width=True, column_config=price_columns,
             )

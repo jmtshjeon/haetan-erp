@@ -316,8 +316,8 @@ def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
             })
         st.table(pd.DataFrame(recipe_details).style.format({
             "투입량": "{:,.1f}", 
-            "1단위당 단가(원)": "{:,.2f}", 
-            "발생 원가(원)": "{:,.1f}"
+            "1단위당 단가(원)": lambda value: f"{int(value):,}",
+            "발생 원가(원)": lambda value: f"{int(value):,}"
         }))
 
     if simulated_price > 0:
@@ -668,11 +668,11 @@ elif menu == "식재료 정보 관리":
                 "item_code": st.column_config.TextColumn("상품코드", disabled=True), 
                 "item_name": st.column_config.TextColumn("상품명", disabled=not is_admin), 
                 "tax_type": st.column_config.TextColumn("세금유형", disabled=not is_admin),
-                "supply_price": st.column_config.NumberColumn("공급가(원)", disabled=not is_admin), 
+                "supply_price": st.column_config.NumberColumn("공급가(원)", format="%d 원", disabled=not is_admin), 
                 "loss_rate": st.column_config.NumberColumn("손실률(%)", disabled=not is_admin), 
                 "total_capacity": st.column_config.NumberColumn("총용량(g)", disabled=not is_admin), 
                 "unit": st.column_config.TextColumn("단위", disabled=True),
-                "최종단가(g당)": st.column_config.NumberColumn("단위당 단가", format="%.3f 원", disabled=True)
+                "최종단가(g당)": st.column_config.NumberColumn("단위당 단가", format="%d 원", disabled=True)
             },
             num_rows="dynamic" if is_admin else "fixed", use_container_width=True
         )
@@ -741,8 +741,8 @@ elif menu == "식재료단가 · 푸디스트 기준":
             )
             ingredients = ingredients[match.any(axis=1)]
         st.dataframe(ingredients.style.format({
-                         "기준단가": "{:,.2f}원", "포장용량": "{:,.0f}",
-                         "변동액": "{:+,.2f}원", "변동률": "{:+.1f}%",
+                         "기준단가": lambda value: f"{int(value):,}원", "포장용량": "{:,.0f}",
+                         "변동액": lambda value: f"{int(value):+,}원", "변동률": "{:+.1f}%",
                      }, na_rep="—"),
                      hide_index=True, use_container_width=True)
     with history:
