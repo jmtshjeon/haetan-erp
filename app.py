@@ -80,6 +80,17 @@ init_db()
 def get_connection():
     return sqlite3.connect(DB_FILE)
 
+
+def record_price_change(cursor, code, name, old_price, new_price):
+    if old_price is None or new_price is None or old_price == new_price:
+        return False
+    cursor.execute(
+        """INSERT INTO price_history (item_code, item_name, old_price, new_price, change_amount)
+           VALUES (?, ?, ?, ?, ?)""",
+        (code, name, old_price, new_price, new_price - old_price),
+    )
+    return True
+
 # 💡 [핵심 최적화] 데이터 연산 캐싱 적용
 # 이 데코레이터가 붙은 함수는 결과값을 메모리에 저장하여 앱 멈춤 현상을 방지합니다.
 @st.cache_data
@@ -176,32 +187,20 @@ with st.sidebar.expander("관리자 로그인"):
     elif input_pw:
         st.error("관리자 비밀번호를 확인해 주세요.")
 
-franchise_menus = [
-    "1. 전체 메뉴 원가표",
-    "2. 메뉴별 원가·마진",
-    "3. 조리 레시피",
-    "4. 식재료 단가 변동 이력",
-]
+franchise_menus = ["메뉴 원가표", "조리 레시피", "식재료 단가"]
+admin_menus = ["필독 · 관리자 모드 활용", "단가 갱신", "식재료 정보 관리", "원가용 레시피 관리"]
+if is_admin and not st.session_state.get("was_admin"):
+    st.session_state["admin_menu"] = admin_menus[0]
+    st.session_state["view_mode"] = "관리자 전용"
+st.session_state["was_admin"] = is_admin
 if is_admin:
-    admin_menus = franchise_menus + [
-        "5. 원가용 레시피 관리",
-        "6. 식재료 정보 관리",
-        "7. 식재료 단가 업데이트",
-    ]
-    menu = st.sidebar.radio("관리자 메뉴", admin_menus, key="admin_menu")
+    view = st.sidebar.radio("화면 선택", ["관리자 전용", "가맹점 화면"], key="view_mode")
 else:
-    menu = st.sidebar.radio("가맹점용 · 조회", franchise_menus, key="franchise_menu")
-
-if menu != "3. 조리 레시피":
-    st.markdown(
-        """
-        <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
-            <h1 style='text-align: center; color: #1f2937;'>📊 F&B 식자재 원가 통합 관리 대시보드</h1>
-            <p style='text-align: center; color: #4b5563;'>가맹점 상권별 탄력 판가 적용 및 세트메뉴 원가 연산 시스템</p>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
+    view = "가맹점 화면"
+if view == "관리자 전용":
+    menu = st.sidebar.radio("[관리자 전용]", admin_menus, key="admin_menu")
+else:
+    menu = st.sidebar.radio("가맹점용", franchise_menus, key="franchise_menu")
 
 OYSTER_COST_ESTIMATES = {
     "꽃삼겹 오징어굴보쌈": (43000, 17377),
@@ -305,7 +304,30 @@ def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
 
 
 # --- 기능 1: 전체 메뉴 종합 요약 분석표 ---
-if menu == "1. 전체 메뉴 원가표":
+if menu == "필독 · 관리자 모드 활용":
+    st.subheader("필독 · 관리자 모드 활용")
+    st.markdown("""
+**평소에는 ‘단가 갱신’만 열면 됩니다.**
+
+1. 푸디스트에서 **해탄 원가관리용 즐겨찾기 엑셀**을 내려받아요.
+2. **단가 갱신**에 올려 기존 단가와 조회 단가를 비교해요. 포장 규격이 달라졌거나 기준이 불분명한 품목은 선택을 해제해요.
+3. 선택한 품목을 반영하고 **가맹점 화면 → 식재료 단가 → 변동 이력**에서 확인해요.
+
+**업무가 바뀐 경우에만 수정해요.**
+
+- 시장·직발주 단가, 포장용량, 손실률은 **식재료 정보 관리**에서 수정해요.
+- 메뉴에 쓰는 재료·투입량이나 프랩 완성중량은 **원가용 레시피 관리**에서 수정해요. 전체 파일을 올릴 때는 전체 메뉴와 프랩이 들어 있는지 확인해요.
+- 본사 기준판매가는 **가맹점 화면 → 메뉴 원가표 → 기준 판매가 수정**에서 저장해요. 메뉴 상세의 ‘우리 매장 판매가’는 비교용이에요.
+- 조리 설명과 사진은 **가맹점 화면 → 조리 레시피 → 레시피 수정**에서 미리 본 뒤 저장해요.
+
+**담당자가 바뀌면**
+
+본사 공용 위치에 최신 원가 DB, 기준 엑셀, 레시피와 사진, 마지막 반영일을 남겨요. 새 담당자와 대체 담당자에게 보관 위치와 갱신 순서를 알려주고, 한 번 직접 갱신해 보도록 해요. 관리자 접근 설정은 인수인계 시 본사에서 관리해요.
+
+웹 앱에서 저장한 데이터와 사진은 재배포 후 보존이 보장되지 않아요. 운영에 쓰는 최신 파일은 본사 공용 위치에 별도로 보관해요.
+""")
+
+elif menu == "메뉴 원가표":
     st.subheader("전체 메뉴 원가표")
     if is_admin:
         st.markdown("전체 메뉴의 마진을 분석합니다. **판매가(원)를 더블클릭하여 수정한 뒤 반드시 아래의 [저장하기] 버튼을 누르세요.**")
@@ -422,49 +444,12 @@ if menu == "1. 전체 메뉴 원가표":
     show_oyster_costs(expanded=True)
 
 # --- 기능 2: 메뉴별 원가/마진 분석 ---
-elif menu == "2. 메뉴별 원가·마진":
-    show_oyster_costs()
-    st.subheader("📈 카테고리별 원가/마진 상세 분석")
-    st.markdown("상단의 리스트에서 분석할 메뉴를 클릭하시면 아래에 상세 내역이 표시됩니다.")
-    
-    unit_prices, df_bom, missing_ings = calculate_unit_prices()
-    
-    if df_bom.empty:
-        st.warning("레시피 DB가 비어있습니다.")
-    else:
-        conn = get_connection()
-        df_prices = pd.read_sql_query("SELECT * FROM menu_prices", conn)
-        conn.close()
-        price_dict = dict(zip(df_prices['menu_name'], df_prices['sell_price']))
-
-        sales_menus_df = df_bom[df_bom["menu_type"] != "프랩"].copy()
-        sales_menus_df["display_category"] = [
-            menu_board_category(cat, name)
-            for cat, name in zip(sales_menus_df["menu_type"], sales_menus_df["menu_name"])
-        ]
-        existing = sales_menus_df["display_category"].dropna().unique().tolist()
-        order = list(MENU_BOARD_ORDER)
-        category_order = [cat for cat in dict.fromkeys(order + existing) if cat in existing]
-        if not category_order:
-            st.info("현재 등록된 판매 메뉴가 없습니다.")
-        tabs = st.tabs(category_order) if category_order else []
-        for tab, cat in zip(tabs, category_order):
-            with tab:
-                cat_menus = sales_menus_df.loc[sales_menus_df["display_category"] == cat, "menu_name"].unique()
-                selected_m_name = st.radio(
-                    f"👇 분석하실 **[{cat}]** 메뉴를 선택해주세요:",
-                    sorted(cat_menus), horizontal=True, key=f"radio_{cat}",
-                )
-                st.markdown("---")
-                show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices)
-
-# --- 기능 3: 레시피 DB 업로드 ---
-elif menu == "3. 조리 레시피":
+elif menu == "조리 레시피":
     from recipe_view import show_recipes
 
     show_recipes(st, get_connection, is_admin)
 
-elif menu == "5. 원가용 레시피 관리":
+elif menu == "원가용 레시피 관리":
     st.subheader("원가용 레시피 관리")
     
     if not is_admin:
@@ -593,7 +578,7 @@ elif menu == "5. 원가용 레시피 관리":
                 st.rerun()
 
 # --- 기능 4: 식재료 DB 마스터 관리 ---
-elif menu == "6. 식재료 정보 관리":
+elif menu == "식재료 정보 관리":
     st.subheader("📝 식재료 마스터 DB 관리")
     
     if is_admin:
@@ -657,128 +642,78 @@ elif menu == "6. 식재료 정보 관리":
         
         if is_admin:
             if st.button("🔄 수정된 데이터 반영"):
-                cursor = conn.cursor()
-                for idx, row in edited_df.iterrows():
-                    cursor.execute("""
-                        UPDATE ingredients SET item_name=?, tax_type=?, supply_price=?, loss_rate=?, total_capacity=? WHERE item_code=?
-                    """, (row['item_name'].strip(), row['tax_type'], row['supply_price'], row['loss_rate'], row['total_capacity'], row['item_code']))
-                conn.commit()
+                with closing(conn), conn:
+                    cursor = conn.cursor()
+                    for _, row in edited_df.iterrows():
+                        code = row["item_code"]
+                        name = row["item_name"].strip()
+                        price = float(row["supply_price"]) if pd.notna(row["supply_price"]) else None
+                        old = cursor.execute(
+                            "SELECT supply_price FROM ingredients WHERE item_code=?", (code,)
+                        ).fetchone()
+                        if old is None:
+                            continue
+                        if price is None:
+                            price = old[0]
+                        cursor.execute("""
+                            UPDATE ingredients SET item_name=?, tax_type=?, supply_price=?, loss_rate=?, total_capacity=? WHERE item_code=?
+                        """, (name, row["tax_type"], price, row["loss_rate"], row["total_capacity"], code))
+                        record_price_change(cursor, code, name, old[0], price)
                 st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
                 st.success("동기화 완료!")
                 st.rerun()
     conn.close()
 
 # --- 기능 5: 푸디스트 및 외부식재료 DB 동기화 ---
-elif menu == "7. 식재료 단가 업데이트":
-    st.subheader("🔄 물류 단가 스마트 자동 업데이트")
-    
-    if not is_admin:
-        st.warning("⛔ 발주서 엑셀 업로드(단가 동기화) 기능은 **관리자 전용**입니다.")
-    else:
-        uploaded_file = st.file_uploader("발주서 엑셀 파일 업로드", type=["xlsx", "csv"])
-        
-        if uploaded_file:
-            df_order = pd.read_excel(uploaded_file) if not uploaded_file.name.endswith('.csv') else pd.read_csv(uploaded_file)
-            if st.button("🚀 데이터 자동 파싱 및 단가 갱신"):
-                conn = get_connection()
-                cursor = conn.cursor()
-                
-                updated_items = []
-                new_items = []
-                update_count = 0 
-                
-                weight_col = next((col for col in df_order.columns if '총중량' in str(col).replace(" ", "")), None)
-                qty_col = next((col for col in df_order.columns if '수량' == str(col).strip()), None)
-                tax_col = next((col for col in df_order.columns if '부가세' in str(col)), None)
-                price_col = next((col for col in df_order.columns if '단가' == str(col).strip()), None)
-                
-                if not price_col:
-                    st.error("엑셀 파일에 '단가' 열이 존재하지 않습니다.")
-                else:
-                    for idx, row in df_order.dropna(subset=['상품코드']).iterrows():
-                        code = str(row['상품코드']).strip()
-                        name = str(row['상품명']).strip()
-                        price = float(row[price_col]) if pd.notna(row[price_col]) else 0.0
-                        
-                        t_type = "면세"
-                        if tax_col and pd.notna(row[tax_col]):
-                            try:
-                                t_type = "과세" if float(row[tax_col]) > 0 else "면세"
-                            except:
-                                pass
-                        
-                        total_weight_kg = 0.0
-                        if weight_col and pd.notna(row[weight_col]):
-                            try: total_weight_kg = float(row[weight_col])
-                            except: pass
-                            
-                        qty = 1.0
-                        if qty_col and pd.notna(row[qty_col]):
-                            try: qty = float(row[qty_col]) if float(row[qty_col]) > 0 else 1.0
-                            except: pass
+elif menu == "단가 갱신":
+    st.subheader("단가 갱신")
+    if is_admin:
+        from price_update import show_price_update
 
-                        if total_weight_kg > 0:
-                            capacity = (total_weight_kg / qty) * 1000.0
-                        else:
-                            capacity = 1000.0
-                        
-                        item_unit = 'g' 
-                        
-                        cursor.execute("SELECT supply_price, total_capacity, unit FROM ingredients WHERE item_code=?", (code,))
-                        db_result = cursor.fetchone()
-                        
-                        if db_result:
-                            old_price, old_capacity, item_unit = db_result
-                            if item_unit != "g" or total_weight_kg <= 0:
-                                capacity = old_capacity
-                            cursor.execute("UPDATE ingredients SET supply_price=?, tax_type=?, total_capacity=?, unit=? WHERE item_code=?", (price, t_type, capacity, item_unit, code))
-                            update_count += 1
-                            
-                            if old_price != price:
-                                diff = price - old_price
-                                diff_str = f"🔺 +{int(diff):,}원" if diff > 0 else f"🔻 {int(diff):,}원"
-                                cursor.execute("INSERT INTO price_history (item_code, item_name, old_price, new_price, change_amount) VALUES (?, ?, ?, ?, ?)", (code, name, old_price, price, diff))
-                                updated_items.append({"상품명": name, "용량": f"{capacity:g} {item_unit}", "기존단가": f"{int(old_price):,}원", "변경단가": f"{int(price):,}원", "변동액": diff_str})
-                        else:
-                            cursor.execute("INSERT INTO ingredients (item_code, item_name, tax_type, supply_price, loss_rate, total_capacity, unit) VALUES (?, ?, ?, ?, 0.0, ?, ?)", (code, name, t_type, price, capacity, item_unit))
-                            new_items.append({"상품명": name, "용량": f"{capacity:g} {item_unit}", "신규등록단가": f"{int(price):,}원"})
-                            
-                    conn.commit()
-                    conn.close()
-                    st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
-                    
-                    st.success(f"데이터 스마트 분석 완료! (기존 데이터 교정: {update_count}건, 신규 등록: {len(new_items)}건)")
-                    
-                    col_u, col_n = st.columns(2)
-                    with col_u:
-                        with st.expander(f"🔄 단가 변동 내역 상세 ({len(updated_items)}건)", expanded=True):
-                            if updated_items: st.dataframe(pd.DataFrame(updated_items), use_container_width=True, hide_index=True)
-                            else: st.info("변동된 품목이 없습니다.")
-                    with col_n:
-                        with st.expander(f"🆕 신규 등록 상세 (세금/중량 매칭 결과) ({len(new_items)}건)", expanded=True):
-                            if new_items: st.dataframe(pd.DataFrame(new_items), use_container_width=True, hide_index=True)
-                            else: st.info("신규 추가된 품목이 없습니다.")
+        show_price_update(st, get_connection, record_price_change)
 
-# --- 기능 6: 물류 단가 변동 이력 분석 ---
-elif menu == "4. 식재료 단가 변동 이력":
-    st.subheader("📉 식재료 단가 장기 변동 추이 및 이력 분석")
-    conn = get_connection()
-    df_hist = pd.read_sql_query("SELECT update_date, item_code, item_name, old_price, new_price, change_amount FROM price_history ORDER BY update_date DESC", conn)
-    conn.close()
+elif menu == "식재료 단가":
+    st.subheader("식재료 단가")
+    current, history = st.tabs(["현재 단가", "변동 이력"])
+    with current:
+        with closing(get_connection()) as conn:
+            ingredients = pd.read_sql_query("""
+                SELECT item_code AS 상품코드, item_name AS 식재료,
+                       supply_price AS 기준단가, total_capacity AS 포장용량, unit AS 단위
+                FROM ingredients ORDER BY item_name
+            """, conn)
+        keyword = st.text_input("식재료명 또는 상품코드 검색", key="ingredient_price_search").strip()
+        if keyword:
+            match = ingredients[["식재료", "상품코드"]].apply(
+                lambda col: col.str.contains(keyword, case=False, na=False, regex=False)
+            )
+            ingredients = ingredients[match.any(axis=1)]
+        st.dataframe(ingredients.style.format({"기준단가": "{:,.2f}원", "포장용량": "{:,.0f}"}),
+                     hide_index=True, use_container_width=True)
+    with history:
+        conn = get_connection()
+        df_hist = pd.read_sql_query("SELECT update_date, item_code, item_name, old_price, new_price, change_amount FROM price_history ORDER BY update_date DESC, id DESC", conn)
+        conn.close()
     
-    if df_hist.empty:
-        st.info("아직 단가 변동 이력이 없습니다.")
-    else:
-        df_hist['update_date'] = pd.to_datetime(df_hist['update_date']).dt.strftime('%Y-%m-%d %H:%M')
-        search_keyword = st.text_input("특정 식재료 이름으로 검색 (예: 오징어)")
-        filtered_df = df_hist[df_hist['item_name'].str.contains(search_keyword, case=False, na=False)] if search_keyword else df_hist
+        if df_hist.empty:
+            st.info("이 데이터에 저장된 단가 변경 이력이 없습니다. 기존 품목의 가격이 실제로 바뀐 경우에 기록됩니다.")
+        else:
+            df_hist['update_date'] = pd.to_datetime(df_hist['update_date'], errors="coerce").dt.strftime('%Y-%m-%d %H:%M')
+            search_keyword = st.text_input("상품명 또는 상품코드로 검색").strip()
+            filtered_df = df_hist
+            if search_keyword:
+                match = df_hist[["item_name", "item_code"]].apply(
+                    lambda col: col.str.contains(search_keyword, case=False, na=False, regex=False)
+                )
+                filtered_df = df_hist[match.any(axis=1)]
+            st.caption(f"변동 이력 {len(filtered_df):,}건")
             
-        def format_change(val): return f"🔺 +{int(val):,}원" if val > 0 else (f"🔻 {int(val):,}원" if val < 0 else "-")
+            def format_change(val): return f"🔺 +{int(val):,}원" if val > 0 else (f"🔻 {int(val):,}원" if val < 0 else "-")
 
-        display_df = filtered_df.copy()
-        display_df['변동 내역'] = display_df['change_amount'].apply(format_change)
-        display_df['old_price'] = display_df['old_price'].apply(lambda x: f"{int(x):,}원")
-        display_df['new_price'] = display_df['new_price'].apply(lambda x: f"{int(x):,}원")
+            display_df = filtered_df.copy()
+            display_df['변동 내역'] = display_df['change_amount'].apply(format_change)
+            display_df['old_price'] = display_df['old_price'].apply(lambda x: f"{int(x):,}원")
+            display_df['new_price'] = display_df['new_price'].apply(lambda x: f"{int(x):,}원")
         
-        display_df = display_df.rename(columns={'update_date': '변동 일시', 'item_code': '상품코드', 'item_name': '상품명', 'old_price': '기존 단가', 'new_price': '새로운 단가'})
-        st.dataframe(display_df[['변동 일시', '상품코드', '상품명', '기존 단가', '새로운 단가', '변동 내역']], use_container_width=True, hide_index=True)
+            display_df = display_df.rename(columns={'update_date': '변동 일시', 'item_code': '상품코드', 'item_name': '상품명', 'old_price': '기존 단가', 'new_price': '새로운 단가'})
+            st.dataframe(display_df[['변동 일시', '상품코드', '상품명', '기존 단가', '새로운 단가', '변동 내역']], use_container_width=True, hide_index=True)
