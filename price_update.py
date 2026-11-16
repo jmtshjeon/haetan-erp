@@ -91,14 +91,14 @@ def compare_prices(frame, master):
             "조회 상품명": product, "앱 포장 기준": app_pack,
             "조회 규격": "" if pd.isna(spec) else str(spec), "규격 비교": comparison,
             "기존 단가": existing[1] if existing else None,
-            "조회 단가": float(price) if isfinite(price) else None,
+            "업로드 파일 단가": float(price) if isfinite(price) else None,
         }
         if len(group) > 1:
             reason = "엑셀에 같은 상품코드가 여러 줄 있음"
         elif not existing:
             reason = OUTSIDE_COST_SCOPE
         elif not isfinite(price) or price <= 0 or existing[1] is None:
-            reason = "기존 단가 또는 조회 단가 확인 필요"
+            reason = "기존 단가 또는 업로드 파일 단가 확인 필요"
         if reason:
             review.append({**entry, "확인 사항": reason})
         elif price != existing[1]:
@@ -110,7 +110,7 @@ def apply_prices(conn, chosen, record_price_change, mark_cost_update):
     with conn:
         cursor = conn.cursor()
         for row in chosen:
-            code, old, new = row["앱 상품코드"], row["기존 단가"], row["조회 단가"]
+            code, old, new = row["앱 상품코드"], row["기존 단가"], row["업로드 파일 단가"]
             cursor.execute(
                 "UPDATE ingredients SET supply_price=? WHERE item_code=? AND supply_price=?",
                 (new, code, old),
@@ -143,7 +143,7 @@ def apply_reviewed_price(conn, original, price, capacity, record_price_change, m
 
 def review_key(row, master):
     return (row["상품코드"], row["앱 상품코드"], row["조회 상품명"], row["조회 규격"],
-            row["조회 단가"], master.get(row["앱 상품코드"]))
+            row["업로드 파일 단가"], master.get(row["앱 상품코드"]))
 
 
 def show_review_editor(st, rows, master, completed, get_connection, record_price_change, mark_cost_update):
@@ -162,7 +162,7 @@ def show_review_editor(st, rows, master, completed, get_connection, record_price
     name, old_price, old_capacity, unit = master[code]
     original = (name, old_price, old_capacity, unit, code)
     st.write(f"**확인 사항** · {row['확인 사항']}")
-    quoted = row["조회 단가"]
+    quoted = row["업로드 파일 단가"]
     quoted_text = f"{int(quoted):,}원" if quoted is not None else "없음"
     st.caption(f"조회 상품 {source_code} · {row['조회 상품명']} · {row['조회 규격'] or '규격 없음'} · {quoted_text}")
     st.caption(f"저장 대상 {code} · {name} · 기존 포장 {row['앱 포장 기준'] or '미등록'}")
@@ -246,7 +246,7 @@ def show_price_update(st, get_connection, record_price_change, mark_cost_update)
 
     price_columns = {
         name: st.column_config.NumberColumn(name, format="%d 원")
-        for name in ("기존 단가", "조회 단가", "변동액")
+        for name in ("기존 단가", "업로드 파일 단가", "변동액")
     }
     if changes:
         st.markdown("#### 바뀐 단가")
@@ -304,6 +304,6 @@ def show_price_update(st, get_connection, record_price_change, mark_cost_update)
         with st.expander(f"원가 연동 대상 아님 · {len(skipped)}개 건너뜀"):
             st.caption("현재 메뉴 원가에 쓰이는 식재료 코드와 연결되지 않은 품목입니다. 실제 사용 품목이 여기 있으면 앱의 등록 코드와 조회 코드를 확인하세요.")
             st.dataframe(
-                pd.DataFrame(skipped)[["상품코드", "조회 상품명", "조회 규격", "조회 단가"]],
+                pd.DataFrame(skipped)[["상품코드", "조회 상품명", "조회 규격", "업로드 파일 단가"]],
                 hide_index=True, use_container_width=True, column_config=price_columns,
             )

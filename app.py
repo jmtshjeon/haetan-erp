@@ -430,7 +430,7 @@ if menu == "필독 · 관리자 모드 활용":
 **평소에는 ‘단가 갱신’만 열면 됩니다.**
 
 1. 푸디스트에서 **해탄 원가관리용 즐겨찾기 엑셀**을 내려받아요.
-2. **단가 갱신**에 올려 기존 단가와 조회 단가를 비교해요. 포장 규격이 달라졌거나 기준이 불분명한 품목은 선택을 해제해요.
+2. **단가 갱신**에 올려 기존 단가와 업로드 파일 단가를 비교해요. 포장 규격이 달라졌거나 기준이 불분명한 품목은 선택을 해제해요.
 3. 선택한 품목을 반영하고 **가맹점 화면 → 식재료단가 · 푸디스트 기준 → 변동 이력**에서 확인해요.
 
 **업무가 바뀐 경우에만 수정해요.**
@@ -899,7 +899,20 @@ elif menu == "식재료단가 · 푸디스트 기준":
                 filtered_df = df_hist[match.any(axis=1)]
             st.caption(f"변동 이력 {len(filtered_df):,}건")
             
-            def format_change(val): return f"🔺 +{int(val):,}원" if val > 0 else (f"🔻 {int(val):,}원" if val < 0 else "-")
+            def format_change(value):
+                if value > 0:
+                    return f"▲ +{int(value):,}원"
+                if value < 0:
+                    return f"▼ {int(value):,}원"
+                return "—"
+
+            def color_changes(values):
+                return [
+                    "color: #d32f2f; font-weight: bold" if value.startswith("▲")
+                    else "color: #1976d2; font-weight: bold" if value.startswith("▼")
+                    else ""
+                    for value in values
+                ]
 
             display_df = filtered_df.copy()
             display_df['변동 내역'] = display_df['change_amount'].apply(format_change)
@@ -907,4 +920,6 @@ elif menu == "식재료단가 · 푸디스트 기준":
             display_df['new_price'] = display_df['new_price'].apply(lambda x: f"{int(x):,}원")
         
             display_df = display_df.rename(columns={'update_date': '변동 일시', 'item_code': '상품코드', 'item_name': '상품명', 'old_price': '기존 단가', 'new_price': '새로운 단가'})
-            st.dataframe(display_df[['변동 일시', '상품코드', '상품명', '기존 단가', '새로운 단가', '변동 내역']], use_container_width=True, hide_index=True)
+            history_columns = ['변동 일시', '상품코드', '상품명', '기존 단가', '새로운 단가', '변동 내역']
+            styled_history = display_df[history_columns].style.apply(color_changes, subset=['변동 내역'])
+            st.dataframe(styled_history, use_container_width=True, hide_index=True)
