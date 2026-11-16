@@ -844,7 +844,7 @@ elif menu == "단가 갱신":
     if is_admin:
         from price_update import show_price_update
 
-        show_price_update(st, get_connection, record_price_change)
+        show_price_update(st, get_connection, record_price_change, mark_cost_update)
 
 elif menu == "식재료단가 · 푸디스트 기준":
     st.subheader("식재료단가 · 푸디스트 기준")

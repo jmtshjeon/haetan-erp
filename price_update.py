@@ -106,7 +106,7 @@ def compare_prices(frame, master):
     return changes, review
 
 
-def apply_prices(conn, chosen, record_price_change):
+def apply_prices(conn, chosen, record_price_change, mark_cost_update):
     with conn:
         cursor = conn.cursor()
         for row in chosen:
@@ -118,9 +118,20 @@ def apply_prices(conn, chosen, record_price_change):
             if cursor.rowcount != 1:
                 raise ValueError("다른 단가가 먼저 저장되었습니다. 파일을 다시 올려 비교해 주세요.")
             record_price_change(cursor, code, row["앱 재료명"], old, new)
+        if chosen:
+            mark_cost_update(cursor)
 
 
-def show_price_update(st, get_connection, record_price_change):
+def show_price_update(st, get_connection, record_price_change, mark_cost_update):
+    applied_count = st.session_state.pop("price_update_applied_count", None)
+    if applied_count is not None:
+        st.success(f"{applied_count}개 단가를 저장하고 변동 이력에 기록했습니다.")
+        st.caption("반영한 품목은 아래 변경 후보에서 빠집니다. 저장 내역은 식재료단가의 ‘변동 이력’에서 확인할 수 있습니다.")
+        st.button(
+            "가맹점 화면에서 저장 내역 확인",
+            on_click=st.session_state.update,
+            args=({"view_mode": "가맹점 화면", "franchise_menu": "식재료단가 · 푸디스트 기준"},),
+        )
     st.write("푸디스트 즐겨찾기 파일을 올리고, 앱 포장 기준과 조회 규격을 비교한 뒤 단가를 반영하세요.")
     upload = st.file_uploader("푸디스트 즐겨찾기 파일", type=["xlsx", "csv"])
     if upload is None:
@@ -176,12 +187,13 @@ def show_price_update(st, get_connection, record_price_change):
         if st.button(f"선택한 {len(chosen)}개 단가 반영", disabled=not chosen):
             try:
                 with closing(get_connection()) as conn:
-                    apply_prices(conn, chosen, record_price_change)
+                    apply_prices(conn, chosen, record_price_change, mark_cost_update)
             except ValueError as error:
                 st.error(str(error))
             else:
                 st.cache_data.clear()
-                st.success(f"{len(chosen)}개 단가를 반영하고 변동 이력에 기록했습니다.")
+                st.session_state["price_update_applied_count"] = len(chosen)
+                st.rerun()
     else:
         st.info("반영할 단가 변경이 없습니다.")
     needs_review = [row for row in review if row["확인 사항"] != OUTSIDE_COST_SCOPE]
