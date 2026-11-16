@@ -167,27 +167,30 @@ else:
 
 st.sidebar.markdown("---")
 
-menu = st.sidebar.radio(
-    "📂 해탄 메뉴 분석 시스템", 
-    [
-        "1. 메뉴 원가 종합분석표", 
-        "2. 메뉴별 원가/마진 분석", 
-        "레시피",
-        "3. 레시피 DB 업로드", 
-        "4. 식재료 DB 마스터 관리", 
-        "5. 푸디스트 및 외부식재료 DB 동기화",
-        "6. 📉 단가 변동 이력 분석 (History)"
-    ]
-)
+with st.sidebar.expander("관리자 로그인"):
+    input_pw = st.text_input("관리자 비밀번호", type="password")
+    is_admin = bool(ADMIN_PASSWORD) and input_pw == ADMIN_PASSWORD
+    if is_admin:
+        st.success("관리자 모드 활성화됨")
+    elif input_pw:
+        st.error("관리자 비밀번호를 확인해 주세요.")
 
-st.sidebar.markdown("---")
-input_pw = st.sidebar.text_input("🔐 관리자 비밀번호", type="password", help="데이터 업로드 및 수정을 위한 관리자 전용 비밀번호입니다.")
-is_admin = bool(ADMIN_PASSWORD) and input_pw == ADMIN_PASSWORD
-
+franchise_menus = [
+    "1. 메뉴 원가 종합분석표",
+    "2. 메뉴별 원가/마진 분석",
+    "레시피",
+    "6. 📉 단가 변동 이력 분석 (History)",
+]
 if is_admin:
-    st.sidebar.success("✅ 관리자 모드 활성화됨")
+    admin_menus = franchise_menus[:-1] + [
+        "3. 레시피 DB 업로드",
+        "4. 식재료 DB 마스터 관리",
+        "5. 푸디스트 및 외부식재료 DB 동기화",
+        franchise_menus[-1],
+    ]
+    menu = st.sidebar.radio("관리자 메뉴", admin_menus, key="admin_menu")
 else:
-    st.sidebar.info("👀 보기 전용 모드 (수정 불가)")
+    menu = st.sidebar.radio("가맹점용 · 조회", franchise_menus, key="franchise_menu")
 
 if menu != "레시피":
     st.markdown(
