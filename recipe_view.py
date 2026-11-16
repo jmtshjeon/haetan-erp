@@ -149,7 +149,7 @@ def show_recipes(st, get_connection, is_admin=False):
         "{width:6rem;text-align:right;white-space:nowrap;border-left:1px solid rgba(128,128,128,.23)}"
         ".st-key-recipe-page .recipe-table caption{caption-side:top;text-align:left;height:32px;font-weight:700}"
         ".st-key-recipe-page .recipe-table thead tr{height:34px}"
-        "@media(min-width:641px){.st-key-recipe-page .st-key-recipe-cover{padding-top:66px}}"
+        "@media(min-width:641px){.st-key-recipe-page [class*='st-key-recipe-cover-']{padding-top:66px}}"
         ".st-key-recipe-page .recipe-photo-slot{min-height:76px;display:grid;place-items:center;"
         "border:1px dashed rgba(128,128,128,.55);border-radius:6px;font-size:.85rem}</style>",
         unsafe_allow_html=True,
@@ -215,7 +215,8 @@ def render_selected_recipe(st, get_connection, is_admin, selected):
     with cover_column:
         cover = find_menu_photo(menu)
         if cover:
-            with st.container(key="recipe-cover"):
+            cover_key = sha256(f"{category}/{menu}".encode("utf-8")).hexdigest()
+            with st.container(key=f"recipe-cover-{cover_key}"):
                 st.image(str(cover), width=380)
         else:
             st.info("자료 사진 없음")
