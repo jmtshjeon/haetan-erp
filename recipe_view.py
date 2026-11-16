@@ -42,7 +42,14 @@ def menu_board_category(category, name):
 def recipe_display_category(file):
     category = file.parent.parent.name
     name = file.parent.name.replace("／", "/")
-    return menu_board_category(category, name) or category
+    return menu_board_category(category, name)
+
+
+def select_menu_group(st, categories, *, key):
+    existing = set(categories) - {None}
+    ordered = [category for category in MENU_BOARD_ORDER if category in existing]
+    ordered.extend(sorted(existing.difference(MENU_BOARD_ORDER)))
+    return st.radio("메뉴 분류", ["전체 메뉴", *ordered], horizontal=True, key=key)
 
 
 def find_photo(folder, stem):
@@ -160,16 +167,12 @@ def show_recipes(st, get_connection, is_admin=False):
 
 def render_recipe_page(st, get_connection, is_admin):
     st.subheader("레시피")
-    files = sorted(RECIPE_FOLDER.glob("*/*/레시피.json"))
+    files = sorted(file for file in RECIPE_FOLDER.glob("*/*/레시피.json") if recipe_display_category(file))
     if not files:
         st.info("등록된 레시피가 없습니다.")
         return
 
-    categories = {recipe_display_category(file) for file in files}
-    order = MENU_BOARD_ORDER
-    ordered_categories = [category for category in order if category in categories]
-    ordered_categories.extend(sorted(categories.difference(order)))
-    group = st.radio("메뉴 분류", ["전체 메뉴", *ordered_categories], horizontal=True)
+    group = select_menu_group(st, map(recipe_display_category, files), key="recipe_group")
     if group != "전체 메뉴":
         files = [file for file in files if recipe_display_category(file) == group]
     selected = st.radio(
