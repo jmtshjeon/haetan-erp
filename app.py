@@ -6,6 +6,7 @@ import io
 import re
 from pathlib import Path
 from contextlib import closing
+from html import escape
 from recipe_view import MENU_BOARD_ORDER, find_menu_photo, menu_board_category
 
 # --- [설정] 관리자 비밀번호 ---
@@ -253,7 +254,18 @@ def show_oyster_costs(expanded=False):
             }
             for name, (price, cost) in OYSTER_COST_ESTIMATES.items()
         ]
-        st.table(pd.DataFrame(rows))
+        with st.container(key="cost-desktop-oyster"):
+            st.table(pd.DataFrame(rows))
+        with st.container(key="cost-mobile-oyster"):
+            mobile_rows = [
+                {
+                    "메뉴명": name, "적용 판매가(원)": price, "총 원가(원)": cost,
+                    "예상 마진(원)": price - cost,
+                    "원가율(%)": float(rate_text(cost, price).rstrip("%")),
+                }
+                for name, (price, cost) in OYSTER_COST_ESTIMATES.items()
+            ]
+            st.markdown(mobile_cost_list(pd.DataFrame(mobile_rows)), unsafe_allow_html=True)
         name = st.radio("판매가를 비교할 굴 메뉴", list(OYSTER_COST_ESTIMATES), horizontal=True)
         photo = find_menu_photo(name)
         if photo:
@@ -267,6 +279,25 @@ def show_oyster_costs(expanded=False):
             rate, margin = st.columns(2)
             rate.metric("원가율", rate_text(cost, actual))
             margin.metric("판매가 − 참고 이론원가", f"{actual - cost:,}원")
+
+
+def mobile_cost_list(frame):
+    cards = []
+    for row in frame.to_dict("records"):
+        name = escape(str(row["메뉴명"]))
+        price = row["적용 판매가(원)"]
+        rate = row["원가율(%)"]
+        margin = row["예상 마진(원)"]
+        price_text = f"{price:,}원" if price > 0 else "판매가 미등록"
+        rate_text = f"{rate:.1f}%" if pd.notna(rate) else "—"
+        margin_text = f"{margin:,.0f}원" if pd.notna(margin) else "—"
+        cards.append(
+            '<details class="mobile-cost-card">'
+            f'<summary><strong>{name}</strong><span>{price_text}<b>원가율 {rate_text}</b></span></summary>'
+            f'<div>총 원가 <strong>{row["총 원가(원)"]:,}원</strong></div>'
+            f'<div>예상 마진 <strong>{margin_text}</strong></div></details>'
+        )
+    return "".join(cards)
 
 
 def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
@@ -428,25 +459,52 @@ elif menu == "해탄 메뉴 원가 및 마진표":
                     return 'background-color: #e6f2ff; color: #0066cc; font-weight: bold;'
                 return ''
                 
-            st.caption("메뉴 행을 선택하면 해당 분류의 표 아래에 원가와 마진 상세가 열립니다.")
+            st.markdown("""
+                <style>
+                [class*="st-key-cost-mobile-"] {display:none}
+                @media (max-width: 767px) {
+                    [class*="st-key-cost-desktop-"] {display:none !important}
+                    [class*="st-key-cost-mobile-"] {display:flex !important}
+                    .mobile-cost-card {border:1px solid rgba(128,128,128,.3);border-radius:10px;margin:0 0 .5rem;padding:.7rem .8rem}
+                    .mobile-cost-card summary {cursor:pointer;min-height:44px;overflow-wrap:anywhere;font-size:1rem}
+                    .mobile-cost-card summary span {display:flex;justify-content:space-between;gap:.5rem;margin-top:.25rem;font-size:.92rem}
+                    .mobile-cost-card div {display:flex;justify-content:space-between;gap:.5rem;padding-top:.4rem}
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            st.caption("메뉴 이름을 누르면 원가와 마진을 볼 수 있습니다.")
+            with st.container(key="cost-mobile-simulator"):
+                with st.expander("우리 매장 판매가로 비교"):
+                    name = st.selectbox("메뉴 선택", df_summary["메뉴명"].tolist(), key="mobile_cost_menu")
+                    starting_price = int(price_dict.get(name, 0))
+                    price = st.number_input("우리 매장 판매가(원)", min_value=0, value=starting_price,
+                                            step=1000, key=f"mobile_sim:{name}")
+                    exact_cost = unit_prices.get(name)
+                    if exact_cost is not None:
+                        st.write(f"총 원가 **{int(exact_cost):,}원**")
+                        if price > 0:
+                            st.write(f"원가율 **{exact_cost / price:.1%}** · 예상 마진 **{int(price - exact_cost):,}원**")
             for group, visible in df_summary.groupby("카테고리", sort=False):
                 st.markdown(f"#### {group}")
                 visible = visible.reset_index(drop=True)
+                with st.container(key=f"cost-mobile-list-{group}"):
+                    st.markdown(mobile_cost_list(visible), unsafe_allow_html=True)
                 styled_df = visible.drop(columns=["카테고리"]).style.format({
                     "적용 판매가(원)": lambda value: f"{value:,}" if value > 0 else "미등록",
                     "총 원가(원)": "{:,}",
                     "예상 마진(원)": "{:,.0f}",
                     "원가율(%)": "{:.1f}",
                 }, na_rep="—").map(color_cost_rate, subset=["원가율(%)"])
-                selection = st.dataframe(
-                    styled_df, hide_index=True, use_container_width=True,
-                    on_select="rerun", selection_mode="single-row", key=f"cost_overview:{group}",
-                    height=38 + 35 * len(visible),
-                )
-                if selection.selection.rows:
-                    row_index = selection.selection.rows[0]
-                    if row_index < len(visible):
-                        show_menu_cost_detail(visible.iloc[row_index]["메뉴명"], df_bom, price_dict, unit_prices)
+                with st.container(key=f"cost-desktop-table-{group}"):
+                    selection = st.dataframe(
+                        styled_df, hide_index=True, use_container_width=True,
+                        on_select="rerun", selection_mode="single-row", key=f"cost_overview:{group}",
+                        height=38 + 35 * len(visible),
+                    )
+                    if selection.selection.rows:
+                        row_index = selection.selection.rows[0]
+                        if row_index < len(visible):
+                            show_menu_cost_detail(visible.iloc[row_index]["메뉴명"], df_bom, price_dict, unit_prices)
 
             if is_admin:
                 with st.expander("기준 판매가 수정"):
