@@ -169,7 +169,7 @@ def show_review_editor(st, rows, master, get_connection, record_price_change, ma
         capacity = capacity_column.number_input(f"적용 포장용량 ({unit or '기존 단위'})", min_value=0.0,
                                                 value=float(old_capacity or 0), step=1.0)
         st.caption("기존 값에서 시작합니다. 적용할 가격과 포장용량을 입력해 주세요.")
-        if st.form_submit_button("이 품목 저장"):
+        if st.form_submit_button("확인한 품목 저장", type="primary"):
             try:
                 with closing(get_connection()) as conn:
                     apply_reviewed_price(conn, original, price, capacity, record_price_change, mark_cost_update)
@@ -184,17 +184,19 @@ def show_review_editor(st, rows, master, get_connection, record_price_change, ma
 def show_price_update(st, get_connection, record_price_change, mark_cost_update):
     reviewed_name = st.session_state.pop("price_review_saved", None)
     if reviewed_name:
-        st.success(f"{reviewed_name}의 적용 값을 저장했습니다. 단가가 바뀐 경우 변동 이력에서 확인할 수 있습니다.")
+        st.toast("확인한 품목 저장 완료", icon="✅")
+        st.success(f"저장 완료 · {reviewed_name}의 단가와 포장용량을 저장했습니다. 단가가 바뀐 경우 변동 이력에서 확인할 수 있습니다.")
     applied_count = st.session_state.pop("price_update_applied_count", None)
     if applied_count is not None:
-        st.success(f"{applied_count}개 단가를 저장하고 변동 이력에 기록했습니다.")
-        st.caption("반영한 품목은 아래 변경 후보에서 빠집니다. 저장 내역은 식재료단가의 ‘변동 이력’에서 확인할 수 있습니다.")
+        st.toast(f"단가 {applied_count}건 저장 완료", icon="✅")
+        st.success(f"저장 완료 · 단가 {applied_count}건을 저장하고 변동 이력에 기록했습니다.")
+        st.caption("저장한 품목은 아래 변경 후보에서 빠집니다. 저장 내역은 식재료단가의 ‘변동 이력’에서 확인할 수 있습니다.")
         st.button(
             "가맹점 화면에서 저장 내역 확인",
             on_click=st.session_state.update,
             args=({"view_mode": "가맹점 화면", "franchise_menu": "식재료단가 · 푸디스트 기준"},),
         )
-    st.write("푸디스트 즐겨찾기 파일을 올리고, 앱 포장 기준과 조회 규격을 비교한 뒤 단가를 반영하세요.")
+    st.write("푸디스트 즐겨찾기 파일을 올리고, 앱 포장 기준과 조회 규격을 비교한 뒤 단가를 저장하세요.")
     upload = st.file_uploader("푸디스트 즐겨찾기 파일", type=["xlsx", "csv"])
     if upload is None:
         return
@@ -233,20 +235,20 @@ def show_price_update(st, get_connection, record_price_change, mark_cost_update)
         saved_signature, revision, select_all = st.session_state.get(state_key, ("", 0, False))
         if saved_signature != signature:
             revision, select_all = 0, False
-        checked = st.checkbox("반영 · 전체 선택", value=select_all, key=f"price_update_all:{signature}")
+        checked = st.checkbox("저장 대상 · 전체 선택", value=select_all, key=f"price_update_all:{signature}")
         if checked != select_all:
             revision, select_all = revision + 1, checked
         st.session_state[state_key] = signature, revision, select_all
         table = pd.DataFrame(changes)
-        table.insert(0, "반영", select_all)
+        table.insert(0, "저장 대상", select_all)
         edited = st.data_editor(
-            table, disabled=[name for name in table if name != "반영"],
+            table, disabled=[name for name in table if name != "저장 대상"],
             hide_index=True, use_container_width=True, column_config=price_columns,
             key=f"price_update_editor:{signature}:{revision}",
         )
-        selected_codes = set(edited.loc[edited["반영"], "상품코드"])
+        selected_codes = set(edited.loc[edited["저장 대상"], "상품코드"])
         chosen = [row for row in changes if row["상품코드"] in selected_codes]
-        if st.button(f"선택한 {len(chosen)}개 단가 반영", disabled=not chosen):
+        if st.button(f"선택한 단가 {len(chosen)}건 저장", disabled=not chosen, type="primary"):
             try:
                 with closing(get_connection()) as conn:
                     apply_prices(conn, chosen, record_price_change, mark_cost_update)
@@ -257,7 +259,7 @@ def show_price_update(st, get_connection, record_price_change, mark_cost_update)
                 st.session_state["price_update_applied_count"] = len(chosen)
                 st.rerun()
     else:
-        st.info("반영할 단가 변경이 없습니다.")
+        st.info("저장할 단가 변경이 없습니다.")
     needs_review = [row for row in review if row["확인 사항"] != OUTSIDE_COST_SCOPE]
     skipped = [row for row in review if row["확인 사항"] == OUTSIDE_COST_SCOPE]
     if needs_review:
