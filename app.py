@@ -202,6 +202,83 @@ if menu != "3. 조리 레시피":
         unsafe_allow_html=True
     )
 
+def menu_display_category(category, name):
+    if "하이볼" in name:
+        return "하이볼"
+    if category == "주류/음료":
+        return None
+    if category in ("최종메뉴", "메인메뉴", "신메뉴", "세트메뉴"):
+        return "메뉴"
+    return category
+
+
+def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
+    menu_data = df_bom[df_bom['menu_name'] == selected_m_name]
+    default_price = int(price_dict.get(selected_m_name, 0))
+
+    st.markdown(f"#### 🎯 [{selected_m_name}] 가맹점 상권별 판매가 시뮬레이터")
+
+    simulated_price = st.number_input(
+        f"실제 판매가 입력 (현재 적용가: {default_price:,}원)", 
+        min_value=0, value=default_price, step=1000,
+        format="%d", 
+        key=f"sim_{selected_m_name}"
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    img_col, data_col = st.columns([1, 2])
+
+    with img_col:
+        img_folder = APP_DIR / "메뉴이미지" 
+        img_path_jpg = os.path.join(img_folder, f"{selected_m_name}.jpg")
+        img_path_png = os.path.join(img_folder, f"{selected_m_name}.png")
+
+        if os.path.exists(img_path_jpg):
+            st.image(img_path_jpg, caption=selected_m_name, use_container_width=True)
+        elif os.path.exists(img_path_png):
+            st.image(img_path_png, caption=selected_m_name, use_container_width=True)
+        else:
+            st.markdown(
+                f"<div style='background-color:#e5e7eb; height:200px; display:flex; align-items:center; justify-content:center; border-radius:10px;'><p style='color:#6b7280; text-align:center; font-size:14px; margin:0;'>📷 이미지가 없습니다</p></div>", 
+                unsafe_allow_html=True
+            )
+
+    with data_col:
+        total_cost = 0
+        recipe_details = []
+        for _, row in menu_data.iterrows():
+            ing_name = row['ingredient_name']
+            qty = row['input_qty']
+            remarks_text = row['remarks'] if pd.notna(row['remarks']) else ""
+            unit_p = unit_prices.get(ing_name, 0.0) 
+            cost = unit_p * qty
+            total_cost += cost
+
+            recipe_details.append({
+                "식재료/프랩명": ing_name,
+                "비고(설명)": remarks_text,
+                "투입량(g/EA)": qty,
+                "1단위당 단가(원)": unit_p,
+                "발생 원가(원)": cost
+            })
+        st.table(pd.DataFrame(recipe_details).style.format({
+            "투입량(g/EA)": "{:,.1f}", 
+            "1단위당 단가(원)": "{:,.2f}", 
+            "발생 원가(원)": "{:,.1f}"
+        }))
+
+    if simulated_price > 0:
+        cost_rate = (total_cost / simulated_price) * 100
+        margin = simulated_price - total_cost
+
+        st.markdown("---")
+        m1, m2, m3 = st.columns(3)
+        m1.metric(label="총 투입 원가", value=f"{int(total_cost):,} 원")
+        m2.metric(label=f"실제 마진 ({simulated_price:,}원 판매시)", value=f"{int(margin):,} 원")
+        m3.metric(label="최종 원가율", value=f"{cost_rate:.1f} %", delta=f"{30 - cost_rate:.1f}% (안정권 30% 기준)", delta_color="inverse")
+
+
 # --- 기능 1: 전체 메뉴 종합 요약 분석표 ---
 if menu == "1. 전체 메뉴 원가표":
     st.subheader("전체 메뉴 원가표")
@@ -230,7 +307,9 @@ if menu == "1. 전체 메뉴 원가표":
         
         for m_name in final_menus:
             menu_data = df_bom[df_bom['menu_name'] == m_name]
-            menu_category = menu_data.iloc[0]['menu_type'] 
+            menu_category = menu_display_category(menu_data.iloc[0]['menu_type'], m_name) 
+            if menu_category is None:
+                continue
             sell_price = price_dict.get(m_name, 0.0) 
             
             total_cost = 0
@@ -241,61 +320,78 @@ if menu == "1. 전체 메뉴 원가표":
                 total_cost += unit_p * qty
                 
             margin = sell_price - total_cost
-            cost_rate = (total_cost / sell_price * 100) if sell_price > 0 else 0
+            cost_rate = (total_cost / sell_price * 100) if sell_price > 0 else None
             
             summary_data.append({
                 "카테고리": menu_category,
                 "메뉴명": m_name,
                 "적용 판매가(원)": int(sell_price),
                 "총 원가(원)": int(total_cost),
-                "예상 마진(원)": int(margin),
-                "원가율(%)": round(cost_rate, 1)
+                "예상 마진(원)": int(margin) if sell_price > 0 else None,
+                "원가율(%)": round(cost_rate, 1) if cost_rate is not None else None
             })
             
         if summary_data:
             df_summary = pd.DataFrame(summary_data)
             
-            category_order = {"최종메뉴": 1, "점심특선": 2, "추가메뉴": 3, "주류/음료": 4}
+            category_order = {"메뉴": 1, "점심특선": 2, "추가메뉴": 3, "하이볼": 4, "주류/음료": 5}
             df_summary['sort_key'] = df_summary['카테고리'].map(category_order).fillna(99)
             df_summary = df_summary.sort_values(by=['sort_key', '메뉴명']).drop(columns=['sort_key'])
 
             def color_cost_rate(val):
+                if pd.isna(val):
+                    return ""
                 if val >= 35.0:
                     return 'background-color: #ffe6e6; color: #cc0000; font-weight: bold;'
                 elif val <= 30.0:
                     return 'background-color: #e6f2ff; color: #0066cc; font-weight: bold;'
                 return ''
                 
-            styled_df = df_summary.style.format({
+            groups = df_summary["카테고리"].unique().tolist()
+            group = st.selectbox("메뉴 분류", ["전체", *groups])
+            visible = df_summary if group == "전체" else df_summary.loc[df_summary["카테고리"] == group]
+            visible = visible.reset_index(drop=True)
+            styled_df = visible.style.format({
+                "적용 판매가(원)": lambda value: f"{value:,}" if value > 0 else "미등록",
                 "총 원가(원)": "{:,}",
                 "예상 마진(원)": "{:,}",
                 "원가율(%)": "{:.1f}"
-            }).map(color_cost_rate, subset=['원가율(%)'])
+            }, na_rep="—").map(color_cost_rate, subset=['원가율(%)'])
 
-            edited_df = st.data_editor(
-                styled_df,
-                column_config={
-                    "카테고리": st.column_config.TextColumn("분류", disabled=True),
-                    "메뉴명": st.column_config.TextColumn("메뉴명", disabled=True),
-                    "적용 판매가(원)": st.column_config.NumberColumn("적용 판매가(원)", disabled=not is_admin, format="%d"),
-                    "총 원가(원)": st.column_config.TextColumn("총 원가(원)", disabled=True),
-                    "예상 마진(원)": st.column_config.TextColumn("예상 마진(원)", disabled=True),
-                    "원가율(%)": st.column_config.TextColumn("원가율(%)", disabled=True)
-                },
-                use_container_width=True, hide_index=True
+            st.caption("표에서 메뉴 행을 선택하면 아래에 원가와 마진 상세가 표시됩니다.")
+            selection = st.dataframe(
+                styled_df, hide_index=True, use_container_width=True,
+                on_select="rerun", selection_mode="single-row", key=f"cost_overview:{group}",
             )
-            
+            if selection.selection.rows:
+                row_index = selection.selection.rows[0]
+                if row_index < len(visible):
+                    show_menu_cost_detail(visible.iloc[row_index]["메뉴명"], df_bom, price_dict, unit_prices)
+
             if is_admin:
-                if st.button("💾 수정한 판매가 DB에 저장하기 (클릭 필수)"):
-                    conn = get_connection()
-                    cursor = conn.cursor()
-                    for _, row in edited_df.iterrows():
-                        cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (row['메뉴명'], row['적용 판매가(원)']))
-                    conn.commit()
-                    conn.close()
-                    st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
-                    st.success("판매가가 성공적으로 변경 및 재계산되었습니다.")
-                    st.rerun()
+                with st.expander("기준 판매가 수정"):
+                    edited_df = st.data_editor(
+                        df_summary,
+                        column_config={
+                            "카테고리": st.column_config.TextColumn("분류", disabled=True),
+                            "메뉴명": st.column_config.TextColumn("메뉴명", disabled=True),
+                            "적용 판매가(원)": st.column_config.NumberColumn("적용 판매가(원)", disabled=not is_admin, format="%d"),
+                            "총 원가(원)": st.column_config.TextColumn("총 원가(원)", disabled=True),
+                            "예상 마진(원)": st.column_config.TextColumn("예상 마진(원)", disabled=True),
+                            "원가율(%)": st.column_config.TextColumn("원가율(%)", disabled=True)
+                        },
+                        use_container_width=True, hide_index=True
+                    )
+                    if st.button("💾 수정한 판매가 DB에 저장하기 (클릭 필수)"):
+                        conn = get_connection()
+                        cursor = conn.cursor()
+                        for _, row in edited_df.iterrows():
+                            cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (row['메뉴명'], row['적용 판매가(원)']))
+                        conn.commit()
+                        conn.close()
+                        st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
+                        st.success("판매가가 성공적으로 변경 및 재계산되었습니다.")
+                        st.rerun()
         else:
             st.info("현재 등록된 판매 메뉴가 없습니다.")
 
@@ -314,14 +410,21 @@ elif menu == "2. 메뉴별 원가·마진":
         conn.close()
         price_dict = dict(zip(df_prices['menu_name'], df_prices['sell_price']))
 
-        sales_menus_df = df_bom[df_bom['menu_type'] != '프랩']
-        
-        category_order = ["최종메뉴", "점심특선", "추가메뉴", "주류/음료"]
-        tabs = st.tabs(category_order)
+        sales_menus_df = df_bom[df_bom["menu_type"] != "프랩"].copy()
+        sales_menus_df["display_category"] = [
+            menu_display_category(cat, name)
+            for cat, name in zip(sales_menus_df["menu_type"], sales_menus_df["menu_name"])
+        ]
+        existing = sales_menus_df["display_category"].dropna().unique().tolist()
+        order = ["메뉴", "점심특선", "추가메뉴", "하이볼", "주류/음료"]
+        category_order = [cat for cat in dict.fromkeys(order + existing) if cat in existing]
+        if not category_order:
+            st.info("현재 등록된 판매 메뉴가 없습니다.")
+        tabs = st.tabs(category_order) if category_order else []
         
         for tab, cat in zip(tabs, category_order):
             with tab:
-                cat_menus = sales_menus_df[sales_menus_df['menu_type'] == cat]['menu_name'].unique()
+                cat_menus = sales_menus_df[sales_menus_df['display_category'] == cat]['menu_name'].unique()
                 if len(cat_menus) == 0:
                     st.info(f"등록된 [{cat}] 메뉴가 없습니다.")
                 else:
@@ -334,70 +437,7 @@ elif menu == "2. 메뉴별 원가·마진":
                     
                     st.markdown("---")
                     
-                    menu_data = df_bom[df_bom['menu_name'] == selected_m_name]
-                    default_price = int(price_dict.get(selected_m_name, 0))
-                    
-                    st.markdown(f"#### 🎯 [{selected_m_name}] 가맹점 상권별 판매가 시뮬레이터")
-                    
-                    simulated_price = st.number_input(
-                        f"실제 판매가 입력 (현재 적용가: {default_price:,}원)", 
-                        min_value=0, value=default_price, step=1000,
-                        format="%d", 
-                        key=f"sim_{selected_m_name}"
-                    )
-                    
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    
-                    img_col, data_col = st.columns([1, 2])
-                    
-                    with img_col:
-                        img_folder = APP_DIR / "메뉴이미지" 
-                        img_path_jpg = os.path.join(img_folder, f"{selected_m_name}.jpg")
-                        img_path_png = os.path.join(img_folder, f"{selected_m_name}.png")
-                        
-                        if os.path.exists(img_path_jpg):
-                            st.image(img_path_jpg, caption=selected_m_name, use_container_width=True)
-                        elif os.path.exists(img_path_png):
-                            st.image(img_path_png, caption=selected_m_name, use_container_width=True)
-                        else:
-                            st.markdown(
-                                f"<div style='background-color:#e5e7eb; height:200px; display:flex; align-items:center; justify-content:center; border-radius:10px;'><p style='color:#6b7280; text-align:center; font-size:14px; margin:0;'>📷 이미지가 없습니다</p></div>", 
-                                unsafe_allow_html=True
-                            )
-                    
-                    with data_col:
-                        total_cost = 0
-                        recipe_details = []
-                        for _, row in menu_data.iterrows():
-                            ing_name = row['ingredient_name']
-                            qty = row['input_qty']
-                            remarks_text = row['remarks'] if pd.notna(row['remarks']) else ""
-                            unit_p = unit_prices.get(ing_name, 0.0) 
-                            cost = unit_p * qty
-                            total_cost += cost
-                            
-                            recipe_details.append({
-                                "식재료/프랩명": ing_name,
-                                "비고(설명)": remarks_text,
-                                "투입량(g/EA)": qty,
-                                "1단위당 단가(원)": unit_p,
-                                "발생 원가(원)": cost
-                            })
-                        st.table(pd.DataFrame(recipe_details).style.format({
-                            "투입량(g/EA)": "{:,.1f}", 
-                            "1단위당 단가(원)": "{:,.2f}", 
-                            "발생 원가(원)": "{:,.1f}"
-                        }))
-                    
-                    if simulated_price > 0:
-                        cost_rate = (total_cost / simulated_price) * 100
-                        margin = simulated_price - total_cost
-                        
-                        st.markdown("---")
-                        m1, m2, m3 = st.columns(3)
-                        m1.metric(label="총 투입 원가", value=f"{int(total_cost):,} 원")
-                        m2.metric(label=f"실제 마진 ({simulated_price:,}원 판매시)", value=f"{int(margin):,} 원")
-                        m3.metric(label="최종 원가율", value=f"{cost_rate:.1f} %", delta=f"{30 - cost_rate:.1f}% (안정권 30% 기준)", delta_color="inverse")
+                    show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices)
 
 # --- 기능 3: 레시피 DB 업로드 ---
 elif menu == "3. 조리 레시피":
