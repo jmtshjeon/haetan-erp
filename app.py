@@ -88,6 +88,12 @@ def get_connection():
     return sqlite3.connect(DB_FILE)
 
 
+def download_database_snapshot():
+    with closing(get_connection()) as source, closing(sqlite3.connect(":memory:")) as snapshot:
+        source.backup(snapshot)
+        return snapshot.serialize()
+
+
 def mark_cost_update(cursor):
     cursor.execute("""
         INSERT OR REPLACE INTO app_update_dates (section, updated_on)
@@ -225,7 +231,7 @@ else:
             "1. **원가 및 마진표**에서 메뉴 행을 눌러 상세를 확인해요. "
             "우리 매장 판매가를 입력해 원가율과 마진을 비교할 수 있어요.\n"
             "2. **조리 매뉴얼**에서 분류와 메뉴 이름을 눌러 조리법을 봐요.\n"
-            "3. **식재료단가**에서 현재 단가와 변동 이력을 확인해요."
+            "3. **식재료단가**에서 현재 단가를 확인해요."
         )
 
 st.sidebar.markdown("---")
@@ -427,11 +433,17 @@ def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
 if menu == "필독 · 관리자 모드 활용":
     st.subheader("필독 · 관리자 모드 활용")
     st.markdown("""
-**평소에는 ‘단가 갱신’만 열면 됩니다.**
+### 매월 한 번 · 푸디스트 단가 갱신
 
-1. 푸디스트에서 **해탄 원가관리용 즐겨찾기 엑셀**을 내려받아요.
-2. **단가 갱신**에 올려 기존 단가와 업로드 파일 단가를 비교해요. 포장 규격이 달라졌거나 기준이 불분명한 품목은 선택을 해제해요.
-3. 선택한 품목을 반영하고 **가맹점 화면 → 식재료단가 · 푸디스트 기준 → 변동 이력**에서 확인해요.
+1. **푸디스트에서 엑셀 받기** · 해탄 원가관리용 즐겨찾기의 엑셀을 내려받고, 파일명에 날짜를 붙여 본사 공용 폴더에 보관해요.
+2. **앱에 엑셀 올리기** · 관리자 로그인 후 **단가 갱신 → 푸디스트 즐겨찾기 파일**에서 엑셀을 선택해요. 엑셀에 없는 품목의 단가는 그대로 유지돼요.
+3. **바뀐 단가 저장하기** · 규격과 가격을 확인해 바꿀 행에 체크한 뒤 **선택한 단가 N건 저장**을 눌러요. 화면에서 **저장 완료**를 확인해요.
+4. **확인 필요 처리하기** · 품목을 하나씩 골라요. 지금 값이 맞으면 **기존 값 유지 · 확인 완료**, 바꿀 값이 있으면 단가와 포장용량을 확인한 뒤 **확인한 품목 저장**을 눌러요.
+5. **최신 앱 DB 받기** · 같은 화면 아래의 **최신 앱 DB 내려받기 → 최신 앱 DB 다운로드**를 눌러요. 받은 파일 이름은 `haetan_cost_management.db`예요.
+6. **GitHub에 올리기** · 앱 저장소의 `main`에서 **Add file → Upload files**를 누르고, `app.py`가 있는 위치에 DB 파일을 올려 **Commit changes**를 눌러요. 파일 이름에 `(1)`이 붙었다면 업로드 전에 원래 이름으로 맞춰요.
+7. **가맹점 화면에서 확인하기** · 배포 후 **식재료단가 → 현재 단가 / 변동 이력**에서 이번에 바꾼 품목의 상품코드로 검색해요.
+
+앱에서 저장한 뒤 5~6단계까지 마쳐야 다음 재배포에도 이번 단가와 변동 이력이 남아요.
 
 **업무가 바뀐 경우에만 수정해요.**
 
@@ -845,86 +857,74 @@ elif menu == "단가 갱신":
         from price_update import show_price_update
 
         show_price_update(st, get_connection, record_price_change, mark_cost_update)
+        with st.expander("최신 앱 DB 내려받기"):
+            st.caption("단가 검토와 저장이 끝나면 최신 앱 DB를 내려받아 GitHub의 같은 이름 파일을 교체하세요. 이후 배포에서도 이 파일의 단가를 사용합니다.")
+            st.download_button(
+                "최신 앱 DB 다운로드",
+                data=download_database_snapshot,
+                file_name="haetan_cost_management.db",
+                mime="application/octet-stream",
+                on_click="ignore",
+            )
 
 elif menu == "식재료단가 · 푸디스트 기준":
     st.subheader("식재료단가 · 푸디스트 기준")
     with closing(get_connection()) as conn:
         price_date = price_update_date(conn)
-    st.caption(f"기준날짜 · {price_date or '기록 없음'}")
-    def format_change(value):
-        if pd.isna(value):
-            return "—"
-        if value > 0:
-            return f"▲ +{int(value):,}원"
-        if value < 0:
-            return f"▼ {int(value):,}원"
-        return "0원"
-
-    def color_changes(values):
-        return [
-            "color: #d32f2f; font-weight: bold" if value.startswith("▲")
-            else "color: #1976d2; font-weight: bold" if value.startswith("▼")
-            else ""
-            for value in values
-        ]
-
+        ingredients = pd.read_sql_query("""
+            SELECT item_code AS 상품코드, item_name AS 식재료,
+                   supply_price AS 기준단가, total_capacity AS 포장용량, unit AS 단위
+            FROM ingredients
+            WHERE item_code GLOB 'F[0-9]*'
+            ORDER BY item_name
+        """, conn)
+        changes = pd.read_sql_query("""
+            SELECT update_date AS "변동 일시", item_code AS 상품코드,
+                   item_name AS 식재료, old_price AS "기존 단가",
+                   new_price AS "새 단가", change_amount AS 변동액
+            FROM price_history
+            WHERE item_code GLOB 'F[0-9]*'
+            ORDER BY update_date DESC, id DESC
+        """, conn)
+    if price_date:
+        st.caption(f"최근 단가 변경일 · {price_date}")
+    keyword = st.text_input("식재료명 또는 상품코드 검색", key="ingredient_price_search").strip()
     current, history = st.tabs(["현재 단가", "변동 이력"])
-    with current:
-        with closing(get_connection()) as conn:
-            ingredients = pd.read_sql_query("""
-                WITH latest AS (
-                    SELECT item_code, old_price, new_price,
-                           ROW_NUMBER() OVER (PARTITION BY item_code ORDER BY update_date DESC, id DESC) AS seq
-                    FROM price_history
-                )
-                SELECT i.item_code AS 상품코드, i.item_name AS 식재료,
-                       i.supply_price AS 기준단가, i.total_capacity AS 포장용량, i.unit AS 단위,
-                       i.supply_price - latest.old_price AS 변동액,
-                       100.0 * (i.supply_price - latest.old_price) / NULLIF(latest.old_price, 0) AS "변동률"
-                FROM ingredients AS i
-                LEFT JOIN latest ON i.item_code = latest.item_code AND latest.seq = 1
-                    AND latest.new_price = i.supply_price
-                WHERE i.item_code GLOB 'F[0-9]*'
-                ORDER BY i.item_name
-            """, conn)
-        keyword = st.text_input("식재료명 또는 상품코드 검색", key="ingredient_price_search").strip()
-        if keyword:
-            match = ingredients[["식재료", "상품코드"]].apply(
-                lambda col: col.str.contains(keyword, case=False, na=False, regex=False)
-            )
-            ingredients = ingredients[match.any(axis=1)]
-        ingredients = ingredients.assign(
-            변동액=ingredients["변동액"].map(format_change),
-            변동률=ingredients["변동률"].map(lambda value: "—" if pd.isna(value) else f"{value:+.1f}%"),
+    if keyword:
+        match = ingredients[["식재료", "상품코드"]].apply(
+            lambda column: column.str.contains(keyword, case=False, na=False, regex=False)
         )
-        styled_prices = ingredients.style.format({
-            "기준단가": lambda value: f"{int(value):,}원", "포장용량": "{:,.0f}",
-        }, na_rep="—").apply(color_changes, subset=["변동액"])
-        st.dataframe(styled_prices, hide_index=True, use_container_width=True)
-    with history:
-        conn = get_connection()
-        df_hist = pd.read_sql_query("SELECT update_date, item_code, item_name, old_price, new_price, change_amount FROM price_history ORDER BY update_date DESC, id DESC", conn)
-        conn.close()
-    
-        if df_hist.empty:
-            st.info("이 데이터에 저장된 단가 변경 이력이 없습니다. 기존 품목의 가격이 실제로 바뀐 경우에 기록됩니다.")
-        else:
-            df_hist['update_date'] = pd.to_datetime(df_hist['update_date'], errors="coerce").dt.strftime('%Y-%m-%d %H:%M')
-            search_keyword = st.text_input("상품명 또는 상품코드로 검색").strip()
-            filtered_df = df_hist
-            if search_keyword:
-                match = df_hist[["item_name", "item_code"]].apply(
-                    lambda col: col.str.contains(search_keyword, case=False, na=False, regex=False)
-                )
-                filtered_df = df_hist[match.any(axis=1)]
-            st.caption(f"변동 이력 {len(filtered_df):,}건")
-            
-            display_df = filtered_df.copy()
-            display_df['변동 내역'] = display_df['change_amount'].apply(format_change)
-            display_df['old_price'] = display_df['old_price'].apply(lambda x: f"{int(x):,}원")
-            display_df['new_price'] = display_df['new_price'].apply(lambda x: f"{int(x):,}원")
-        
-            display_df = display_df.rename(columns={'update_date': '변동 일시', 'item_code': '상품코드', 'item_name': '상품명', 'old_price': '기존 단가', 'new_price': '새로운 단가'})
-            history_columns = ['변동 일시', '상품코드', '상품명', '기존 단가', '새로운 단가', '변동 내역']
-            styled_history = display_df[history_columns].style.apply(color_changes, subset=['변동 내역'])
-            st.dataframe(styled_history, use_container_width=True, hide_index=True)
+        ingredients = ingredients[match.any(axis=1)]
+        history_match = changes[["식재료", "상품코드"]].apply(
+            lambda column: column.str.contains(keyword, case=False, na=False, regex=False)
+        )
+        changes = changes[history_match.any(axis=1)]
+    current.dataframe(
+        ingredients, hide_index=True, use_container_width=True,
+        column_config={
+            "기준단가": st.column_config.NumberColumn(format="%d 원"),
+            "포장용량": st.column_config.NumberColumn(format="%d"),
+        },
+    )
+    if changes.empty:
+        history.info("표시할 단가 변동 이력이 없습니다.")
+    else:
+        changes["변동액"] = changes["변동액"].map(
+            lambda value: f"▲ +{int(value):,}원" if value > 0
+            else f"▼ {int(value):,}원" if value < 0 else "—"
+        )
+        styled = changes.style.apply(
+            lambda values: [
+                "color: #d32f2f; font-weight: bold" if value.startswith("▲")
+                else "color: #1976d2; font-weight: bold" if value.startswith("▼")
+                else "" for value in values
+            ],
+            subset=["변동액"],
+        )
+        history.dataframe(
+            styled, hide_index=True, use_container_width=True,
+            column_config={
+                "기존 단가": st.column_config.NumberColumn(format="%d 원"),
+                "새 단가": st.column_config.NumberColumn(format="%d 원"),
+            },
+        )

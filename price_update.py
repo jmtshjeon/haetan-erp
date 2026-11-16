@@ -200,12 +200,12 @@ def show_price_update(st, get_connection, record_price_change, mark_cost_update)
     reviewed_name = st.session_state.pop("price_review_saved", None)
     if reviewed_name:
         st.toast("확인한 품목 저장 완료", icon="✅")
-        st.success(f"저장 완료 · {reviewed_name}의 단가와 포장용량을 저장했습니다. 단가가 바뀐 경우 변동 이력에서 확인할 수 있습니다.")
+        st.success(f"저장 완료 · {reviewed_name}의 단가와 포장용량을 저장했습니다.")
     applied_count = st.session_state.pop("price_update_applied_count", None)
     if applied_count is not None:
         st.toast(f"단가 {applied_count}건 저장 완료", icon="✅")
-        st.success(f"저장 완료 · 단가 {applied_count}건을 저장하고 변동 이력에 기록했습니다.")
-        st.caption("저장한 품목은 아래 변경 후보에서 빠집니다. 저장 내역은 식재료단가의 ‘변동 이력’에서 확인할 수 있습니다.")
+        st.success(f"저장 완료 · 단가 {applied_count}건을 저장했습니다.")
+        st.caption("저장한 단가는 가맹점 화면의 식재료단가에서 확인할 수 있습니다.")
         st.button(
             "가맹점 화면에서 저장 내역 확인",
             on_click=st.session_state.update,
