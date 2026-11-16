@@ -4,12 +4,15 @@ import sqlite3
 import os
 import io
 import re
+from pathlib import Path
+from contextlib import closing
 
 # --- [설정] 관리자 비밀번호 ---
-ADMIN_PASSWORD = "1234"  
+ADMIN_PASSWORD = os.getenv("HAETAN_ADMIN_PASSWORD")
 
 # --- 1. 데이터베이스(SQLite) 초기화 ---
-DB_FILE = "haetan_cost_management.db"
+APP_DIR = Path(__file__).resolve().parent
+DB_FILE = APP_DIR / "haetan_cost_management.db"
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -154,8 +157,11 @@ st.components.v1.html(
     height=0, width=0
 )
 
-if os.path.exists("logo.png"):
-    st.sidebar.image("logo.png", use_container_width=True)
+logo = APP_DIR / "logo.png"
+if not logo.is_file():
+    logo = APP_DIR / "logo.png.jpg"
+if logo.is_file():
+    st.sidebar.image(str(logo), use_container_width=True)
 else:
     st.sidebar.markdown("### 🏢 HAETAN F&B")
 
@@ -166,6 +172,7 @@ menu = st.sidebar.radio(
     [
         "1. 메뉴 원가 종합분석표", 
         "2. 메뉴별 원가/마진 분석", 
+        "레시피",
         "3. 레시피 DB 업로드", 
         "4. 식재료 DB 마스터 관리", 
         "5. 푸디스트 및 외부식재료 DB 동기화",
@@ -175,7 +182,7 @@ menu = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 input_pw = st.sidebar.text_input("🔐 관리자 비밀번호", type="password", help="데이터 업로드 및 수정을 위한 관리자 전용 비밀번호입니다.")
-is_admin = (input_pw == ADMIN_PASSWORD)
+is_admin = bool(ADMIN_PASSWORD) and input_pw == ADMIN_PASSWORD
 
 if is_admin:
     st.sidebar.success("✅ 관리자 모드 활성화됨")
@@ -341,7 +348,7 @@ elif menu == "2. 메뉴별 원가/마진 분석":
                     img_col, data_col = st.columns([1, 2])
                     
                     with img_col:
-                        img_folder = "메뉴이미지" 
+                        img_folder = APP_DIR / "메뉴이미지" 
                         img_path_jpg = os.path.join(img_folder, f"{selected_m_name}.jpg")
                         img_path_png = os.path.join(img_folder, f"{selected_m_name}.png")
                         
@@ -390,6 +397,11 @@ elif menu == "2. 메뉴별 원가/마진 분석":
                         m3.metric(label="최종 원가율", value=f"{cost_rate:.1f} %", delta=f"{30 - cost_rate:.1f}% (안정권 30% 기준)", delta_color="inverse")
 
 # --- 기능 3: 레시피 DB 업로드 ---
+elif menu == "레시피":
+    from recipe_view import show_recipes
+
+    show_recipes(st, get_connection, is_admin)
+
 elif menu == "3. 레시피 DB 업로드":
     st.subheader("🍳 표준 메뉴 레시피(BOM) DB 관리")
     
@@ -419,41 +431,56 @@ elif menu == "3. 레시피 DB 업로드":
         with st.expander("📂 엑셀 파일로 레시피 일괄 덮어쓰기 (관리자 전용)"):
             uploaded_bom = st.file_uploader("메뉴 레시피 엑셀(CSV) 업로드", type=["xlsx", "csv"])
             if uploaded_bom:
-                df_upload = pd.read_excel(uploaded_bom) if uploaded_bom.name.endswith('.xlsx') else pd.read_csv(uploaded_bom)
-                
-                if st.button("⚠️ 기존 레시피를 모두 지우고 이 엑셀 데이터로 덮어쓰기"):
-                    conn = get_connection()
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM menu_bom") 
-                    
-                    if '비고' not in df_upload.columns:
-                        df_upload['비고'] = ""
-                    
-                    qty_col = '투입량(g)' if '투입량(g)' in df_upload.columns else ('투입량(g/EA)' if '투입량(g/EA)' in df_upload.columns else df_upload.columns[4])
-                    weight_col = '프랩완성중량(판매가)' if '프랩완성중량(판매가)' in df_upload.columns else ('프랩완성중량(g)' if '프랩완성중량(g)' in df_upload.columns else ('판매가(완성중량)' if '판매가(완성중량)' in df_upload.columns else df_upload.columns[2]))
-
-                    for _, row in df_upload.iterrows():
-                        remarks_val = str(row['비고']) if pd.notna(row['비고']) else ""
-                        menu_cat = str(row['메뉴분류']).strip()
-                        m_name = str(row['메뉴명']).strip()
-                        ing_name = str(row['구성_식재료명']).strip() 
-                        w_val = float(row[weight_col]) if pd.notna(row[weight_col]) else 0.0
+                try:
+                    df_upload = pd.read_excel(uploaded_bom) if uploaded_bom.name.lower().endswith(".xlsx") else pd.read_csv(uploaded_bom)
+                    df_upload.columns = df_upload.columns.str.strip()
+                    df_upload = df_upload.dropna(how="all")
+                    qty_col = next((col for col in ("투입량(g)", "투입량(g/EA)") if col in df_upload), None)
+                    weight_col = next((col for col in ("프랩완성중량(판매가)", "프랩완성중량(g)", "판매가(완성중량)") if col in df_upload), None)
+                    required = ["메뉴분류", "메뉴명", "구성_식재료명"]
+                    if df_upload.empty or not qty_col or not weight_col or not all(col in df_upload for col in required):
+                        raise ValueError("레시피 표준양식의 열 이름과 데이터가 있는지 확인해 주세요.")
+                    if (df_upload[required].fillna("").astype(str).apply(lambda col: col.str.strip()) == "").any().any():
+                        raise ValueError("메뉴분류, 메뉴명, 구성 식재료명이 비어 있는 행을 확인해 주세요.")
+                    quantities = pd.to_numeric(df_upload[qty_col], errors="coerce")
+                    raw_weights = df_upload[weight_col].fillna(0)
+                    weights = pd.to_numeric(raw_weights, errors="coerce")
+                    if (quantities.isna() | (quantities < 0) | (quantities == float("inf"))).any():
+                        raise ValueError("투입량을 0 이상의 숫자로 입력해 주세요.")
+                    if (weights.isna() | (weights < 0) | (weights == float("inf"))).any():
+                        raise ValueError("프랩 완성중량과 판매가를 0 이상의 숫자로 입력해 주세요.")
+                    df_upload = df_upload.assign(**{qty_col: quantities, weight_col: weights})
+                    if "비고" not in df_upload:
+                        df_upload["비고"] = ""
+                except ValueError as error:
+                    st.error(f"레시피 파일 확인 필요 · {error}")
+                except Exception:
+                    st.error("레시피 파일을 열 수 없습니다. 엑셀 또는 CSV 파일을 확인해 주세요.")
+                else:
+                    st.caption(f"반영 대상 {len(df_upload):,}줄")
+                    if st.button("⚠️ 기존 레시피를 모두 지우고 이 엑셀 데이터로 덮어쓰기"):
+                        with closing(get_connection()) as conn, conn:
+                            cursor = conn.cursor()
+                            cursor.execute("DELETE FROM menu_bom")
+                            for _, row in df_upload.iterrows():
+                                remarks_val = str(row['비고']) if pd.notna(row['비고']) else ""
+                                menu_cat = str(row['메뉴분류']).strip()
+                                m_name = str(row['메뉴명']).strip()
+                                ing_name = str(row['구성_식재료명']).strip() 
+                                w_val = float(row[weight_col]) if pd.notna(row[weight_col]) else 0.0
                         
-                        if menu_cat != '프랩':
-                            if w_val > 0:
-                                cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (m_name, w_val))
-                            else:
-                                cursor.execute("INSERT OR IGNORE INTO menu_prices (menu_name, sell_price) VALUES (?, 0)", (m_name,))
+                                if menu_cat != '프랩':
+                                    if w_val > 0:
+                                        cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (m_name, w_val))
+                                    else:
+                                        cursor.execute("INSERT OR IGNORE INTO menu_prices (menu_name, sell_price) VALUES (?, 0)", (m_name,))
 
-                        cursor.execute("""
-                            INSERT INTO menu_bom (menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (menu_cat, m_name, w_val, ing_name, row[qty_col], remarks_val))
-                    conn.commit()
-                    conn.close()
-                    st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
-                    st.success("레시피 DB 업로드 성공! (엑셀에 명시된 판매가가 종합분석표에 덮어써졌습니다)")
-                    st.rerun()
+                                cursor.execute("""
+                                    INSERT INTO menu_bom (menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks)
+                                    VALUES (?, ?, ?, ?, ?, ?)
+                                """, (menu_cat, m_name, w_val, ing_name, row[qty_col], remarks_val))
+                        st.cache_data.clear()
+                        st.rerun()
 
     conn = get_connection()
     df_bom_view = pd.read_sql_query("SELECT id, menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks FROM menu_bom", conn)
