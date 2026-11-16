@@ -191,48 +191,14 @@ st.components.v1.html(
 logo = APP_DIR / "logo.png"
 if not logo.is_file():
     logo = APP_DIR / "logo.png.jpg"
-st.markdown("""
-    <style>
-    @media (min-width: 768px) {
-        .st-key-sidebar-brand {
-            padding: 14px 14px 10px;
-            border: 1px solid rgba(110, 126, 172, .35);
-            border-top: 4px solid #263d88;
-            border-radius: 12px;
-            background: linear-gradient(145deg, rgba(71, 99, 181, .14), transparent 70%);
-        }
-        .st-key-sidebar-brand [data-testid="stImage"] {
-            display: flex;
-            justify-content: center;
-        }
-        .st-key-sidebar-brand [data-testid="stImage"] img {
-            width: 210px !important;
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-        }
-        .st-key-sidebar-brand h3 {
-            text-align: center;
-            padding: 0 0 4px;
-        }
-    }
-    </style>
-""", unsafe_allow_html=True)
-with st.sidebar:
-    with st.container(key="sidebar-brand"):
-        if logo.is_file():
-            st.image(str(logo), width=145)
-        st.markdown(f"### {APP_NAME}")
+if logo.is_file():
+    st.sidebar.image(str(logo), width=145)
+st.sidebar.markdown(f"### {APP_NAME}")
 
 st.sidebar.markdown("---")
 
-with st.sidebar.expander("관리자 로그인"):
-    input_pw = st.text_input("관리자 비밀번호", type="password")
-    is_admin = bool(ADMIN_PASSWORD) and input_pw == ADMIN_PASSWORD
-    if is_admin:
-        st.success("관리자 모드 활성화됨")
-    elif input_pw:
-        st.error("관리자 비밀번호를 확인해 주세요.")
+input_pw = st.session_state.get("admin_password_input", "")
+is_admin = bool(ADMIN_PASSWORD) and input_pw == ADMIN_PASSWORD
 
 franchise_menus = [
     "해탄 메뉴 원가 및 마진표",
@@ -251,7 +217,9 @@ else:
 if view == "관리자 전용":
     menu = st.sidebar.radio("[관리자 전용]", admin_menus, key="admin_menu")
 else:
-    menu = st.sidebar.radio("가맹점용", franchise_menus, key="franchise_menu")
+    with st.sidebar:
+        with st.container(key="franchise-sidebar-nav"):
+            menu = st.radio("가맹점용", franchise_menus, key="franchise_menu")
     with st.sidebar.expander("보는 법"):
         st.markdown(
             "1. **원가 및 마진표**에서 메뉴 행을 눌러 상세를 확인해요. "
@@ -260,16 +228,44 @@ else:
             "3. **식재료단가**에서 현재 단가와 변동 이력을 확인해요."
         )
 
+st.sidebar.markdown("---")
+with st.sidebar.expander("관리자 로그인"):
+    st.text_input("관리자 비밀번호", type="password", key="admin_password_input")
+    if is_admin:
+        st.success("관리자 모드 활성화됨")
+    elif input_pw:
+        st.error("관리자 비밀번호를 확인해 주세요.")
+
 if view == "가맹점 화면":
     st.markdown("""
         <style>
         .st-key-franchise-mobile-header {display:none}
+        .st-key-franchise-sidebar-nav [role="radiogroup"] {gap:.4rem}
+        .st-key-franchise-sidebar-nav [role="radiogroup"] label {
+            min-height:44px;
+            padding:6px 4px;
+            box-sizing:border-box;
+        }
+        .st-key-franchise-sidebar-nav [role="radiogroup"] label p {
+            font-size:1.0625rem;
+            font-weight:600;
+            line-height:1.45;
+        }
         @media (max-width: 767px) {
             .st-key-franchise-mobile-header {display:flex !important}
             .st-key-franchise-mobile-header button {min-height:42px}
+            .st-key-franchise-desktop-header {display:none !important}
         }
         @media (min-width: 768px) {
-            .st-key-franchise_menu label p {font-size:1rem;line-height:1.4}
+            .st-key-franchise-desktop-header {
+                padding: 22px 28px;
+                border: 1px solid rgba(110, 126, 172, .35);
+                border-left: 5px solid #263d88;
+                border-radius: 12px;
+                background: linear-gradient(110deg, rgba(71, 99, 181, .18), transparent 85%);
+            }
+            .st-key-franchise-desktop-header img {border-radius:8px}
+            .st-key-franchise-desktop-header h2 {padding:0 0 6px}
             .st-key-pc-cost-heading h2 {font-size:1.9rem;letter-spacing:-.035em}
             .pc-cost-category {display:flex;align-items:center;gap:.65rem;margin-top:.6rem;
                 border-left:4px solid #4263a1;padding-left:.65rem}
@@ -278,6 +274,13 @@ if view == "가맹점 화면":
         }
         </style>
     """, unsafe_allow_html=True)
+    with st.container(key="franchise-desktop-header"):
+        brand_text = st.container()
+        if logo.is_file():
+            brand_logo, brand_text = st.columns([1, 4], vertical_alignment="center")
+            brand_logo.image(str(logo), width=190)
+        brand_text.markdown(f"## {APP_NAME}")
+        brand_text.markdown("메뉴별 원가·마진, 표준 조리법, 푸디스트 식재료 단가를 한곳에서 확인하세요.")
     with st.container(key="franchise-mobile-header"):
         st.markdown(f"### {APP_NAME}")
         for column, label, target in zip(
