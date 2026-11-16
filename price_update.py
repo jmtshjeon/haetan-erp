@@ -141,7 +141,12 @@ def apply_reviewed_price(conn, original, price, capacity, record_price_change, m
         mark_cost_update(cursor)
 
 
-def show_review_editor(st, rows, master, get_connection, record_price_change, mark_cost_update):
+def review_key(row, master):
+    return (row["상품코드"], row["앱 상품코드"], row["조회 상품명"], row["조회 규격"],
+            row["조회 단가"], master.get(row["앱 상품코드"]))
+
+
+def show_review_editor(st, rows, master, completed, get_connection, record_price_change, mark_cost_update):
     linked = {row["상품코드"]: row for row in rows if row["앱 상품코드"] in master}
     if not linked:
         return
@@ -161,6 +166,10 @@ def show_review_editor(st, rows, master, get_connection, record_price_change, ma
     quoted_text = f"{int(quoted):,}원" if quoted is not None else "없음"
     st.caption(f"조회 상품 {source_code} · {row['조회 상품명']} · {row['조회 규격'] or '규격 없음'} · {quoted_text}")
     st.caption(f"저장 대상 {code} · {name} · 기존 포장 {row['앱 포장 기준'] or '미등록'}")
+    if st.button("기존 값 유지 · 확인 완료", key="price_review_keep"):
+        completed[review_key(row, master)] = "기존 값 유지"
+        st.session_state["price_review_kept"] = name
+        st.rerun()
     signature = sha256(repr((source_code, original)).encode("utf-8")).hexdigest()
     with st.form(f"price_review:{signature}"):
         price_column, capacity_column = st.columns(2)
@@ -177,11 +186,17 @@ def show_review_editor(st, rows, master, get_connection, record_price_change, ma
                 st.error(str(error))
             else:
                 st.cache_data.clear()
+                updated_master = {code: (name, price, capacity, unit)}
+                completed[review_key(row, updated_master)] = "수정 저장"
                 st.session_state["price_review_saved"] = name
                 st.rerun()
 
 
 def show_price_update(st, get_connection, record_price_change, mark_cost_update):
+    kept_name = st.session_state.pop("price_review_kept", None)
+    if kept_name:
+        st.toast("기존 값 유지 · 확인 완료", icon="✅")
+        st.success(f"확인 완료 · {kept_name}의 기존 단가와 포장용량을 유지했습니다.")
     reviewed_name = st.session_state.pop("price_review_saved", None)
     if reviewed_name:
         st.toast("확인한 품목 저장 완료", icon="✅")
@@ -200,6 +215,11 @@ def show_price_update(st, get_connection, record_price_change, mark_cost_update)
     upload = st.file_uploader("푸디스트 즐겨찾기 파일", type=["xlsx", "csv"])
     if upload is None:
         return
+    upload_signature = sha256(upload.getbuffer()).hexdigest()
+    previous_signature, completed = st.session_state.get("price_review_completed", ("", {}))
+    if upload_signature != previous_signature:
+        completed = {}
+    st.session_state["price_review_completed"] = upload_signature, completed
     try:
         frame = pd.read_csv(upload) if upload.name.lower().endswith(".csv") else pd.read_excel(upload)
         with closing(get_connection()) as conn:
@@ -260,7 +280,8 @@ def show_price_update(st, get_connection, record_price_change, mark_cost_update)
                 st.rerun()
     else:
         st.info("저장할 단가 변경이 없습니다.")
-    needs_review = [row for row in review if row["확인 사항"] != OUTSIDE_COST_SCOPE]
+    needs_review = [row for row in review if row["확인 사항"] != OUTSIDE_COST_SCOPE
+                    and review_key(row, master) not in completed]
     skipped = [row for row in review if row["확인 사항"] == OUTSIDE_COST_SCOPE]
     if needs_review:
         with st.expander(f"확인 필요 · {len(needs_review)}개", expanded=True):
@@ -269,7 +290,16 @@ def show_price_update(st, get_connection, record_price_change, mark_cost_update)
             )
             st.dataframe(pd.DataFrame(needs_review), hide_index=True, use_container_width=True,
                          column_config=price_columns)
-            show_review_editor(st, needs_review, master, get_connection, record_price_change, mark_cost_update)
+            show_review_editor(st, needs_review, master, completed, get_connection,
+                               record_price_change, mark_cost_update)
+    completed_rows = [
+        {"상품코드": source, "앱 재료명": data[0], "처리 결과": status}
+        for (source, code, _, _, _, data), status in completed.items()
+        if data is not None and data == master.get(code)
+    ]
+    if completed_rows:
+        with st.expander(f"확인 완료 · {len(completed_rows)}개"):
+            st.dataframe(pd.DataFrame(completed_rows).drop_duplicates(), hide_index=True)
     if skipped:
         with st.expander(f"원가 연동 대상 아님 · {len(skipped)}개 건너뜀"):
             st.caption("현재 메뉴 원가에 쓰이는 식재료 코드와 연결되지 않은 품목입니다. 실제 사용 품목이 여기 있으면 앱의 등록 코드와 조회 코드를 확인하세요.")
