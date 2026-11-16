@@ -1,6 +1,7 @@
 import json
 from copy import deepcopy
 from contextlib import closing
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from html import escape
 from pathlib import Path
@@ -65,7 +66,8 @@ def save_recipe(path, recipe, photos, original):
         (path.parent / name).write_bytes(data)
     with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as handle:
         temporary = Path(handle.name)
-        json.dump(recipe, handle, ensure_ascii=False, indent=2)
+        updated_on = datetime.now(timezone(timedelta(hours=9))).date().isoformat()
+        json.dump({**recipe, "updated_on": updated_on}, handle, ensure_ascii=False, indent=2)
     try:
         temporary.replace(path)
     finally:
@@ -159,11 +161,20 @@ def show_recipes(st, get_connection, is_admin=False):
 
 
 def render_recipe_page(st, get_connection, is_admin):
-    st.subheader("레시피")
+    st.subheader("조리 매뉴얼")
     files = sorted(file for file in RECIPE_FOLDER.glob("*/*/레시피.json") if recipe_display_category(file))
     if not files:
         st.info("등록된 레시피가 없습니다.")
         return
+    update_dates = ["2026-11-16"]
+    for file in files:
+        try:
+            updated_on = json.loads(file.read_text(encoding="utf-8-sig")).get("updated_on")
+            if updated_on:
+                update_dates.append(updated_on)
+        except (OSError, UnicodeError, ValueError):
+            continue
+    st.caption(f"업데이트 날짜 · {max(update_dates)}")
 
     groups = {recipe_display_category(file) for file in files}
     ordered = [group for group in MENU_BOARD_ORDER if group in groups]

@@ -72,6 +72,12 @@ def init_db():
             update_date DATETIME DEFAULT (datetime('now', 'localtime'))
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS app_update_dates (
+            section TEXT PRIMARY KEY,
+            updated_on TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -79,6 +85,17 @@ init_db()
 
 def get_connection():
     return sqlite3.connect(DB_FILE)
+
+
+def mark_cost_update(cursor):
+    cursor.execute("""
+        INSERT OR REPLACE INTO app_update_dates (section, updated_on)
+        VALUES ('menu_cost', date('now', '+9 hours'))
+    """)
+
+
+def price_update_date(conn):
+    return conn.execute("SELECT MAX(substr(update_date, 1, 10)) FROM price_history").fetchone()[0]
 
 
 def record_price_change(cursor, code, name, old_price, new_price):
@@ -187,7 +204,11 @@ with st.sidebar.expander("관리자 로그인"):
     elif input_pw:
         st.error("관리자 비밀번호를 확인해 주세요.")
 
-franchise_menus = ["메뉴 원가표", "조리 레시피", "식재료 단가"]
+franchise_menus = [
+    "해탄 메뉴 원가 및 마진표",
+    "조리 매뉴얼",
+    "식재료단가 · 푸디스트 기준",
+]
 admin_menus = ["필독 · 관리자 모드 활용", "단가 갱신", "식재료 정보 관리", "원가용 레시피 관리"]
 if is_admin and not st.session_state.get("was_admin"):
     st.session_state["admin_menu"] = admin_menus[0]
@@ -311,14 +332,14 @@ if menu == "필독 · 관리자 모드 활용":
 
 1. 푸디스트에서 **해탄 원가관리용 즐겨찾기 엑셀**을 내려받아요.
 2. **단가 갱신**에 올려 기존 단가와 조회 단가를 비교해요. 포장 규격이 달라졌거나 기준이 불분명한 품목은 선택을 해제해요.
-3. 선택한 품목을 반영하고 **가맹점 화면 → 식재료 단가 → 변동 이력**에서 확인해요.
+3. 선택한 품목을 반영하고 **가맹점 화면 → 식재료단가 · 푸디스트 기준 → 변동 이력**에서 확인해요.
 
 **업무가 바뀐 경우에만 수정해요.**
 
 - 시장·직발주 단가, 포장용량, 손실률은 **식재료 정보 관리**에서 수정해요.
 - 메뉴에 쓰는 재료·투입량이나 프랩 완성중량은 **원가용 레시피 관리**에서 수정해요. 전체 파일을 올릴 때는 전체 메뉴와 프랩이 들어 있는지 확인해요.
-- 본사 기준판매가는 **가맹점 화면 → 메뉴 원가표 → 기준 판매가 수정**에서 저장해요. 메뉴 상세의 ‘우리 매장 판매가’는 비교용이에요.
-- 조리 설명과 사진은 **가맹점 화면 → 조리 레시피 → 레시피 수정**에서 미리 본 뒤 저장해요.
+- 본사 기준판매가는 **가맹점 화면 → 해탄 메뉴 원가 및 마진표 → 기준 판매가 수정**에서 저장해요. 메뉴 상세의 ‘우리 매장 판매가’는 비교용이에요.
+- 조리 설명과 사진은 **가맹점 화면 → 조리 매뉴얼 → 레시피 수정**에서 미리 본 뒤 저장해요.
 
 **담당자가 바뀌면**
 
@@ -327,8 +348,14 @@ if menu == "필독 · 관리자 모드 활용":
 웹 앱에서 저장한 데이터와 사진은 재배포 후 보존이 보장되지 않아요. 운영에 쓰는 최신 파일은 본사 공용 위치에 별도로 보관해요.
 """)
 
-elif menu == "메뉴 원가표":
-    st.subheader("전체 메뉴 원가표")
+elif menu == "해탄 메뉴 원가 및 마진표":
+    st.subheader("해탄 메뉴 원가 및 마진표")
+    with closing(get_connection()) as conn:
+        saved_date = conn.execute(
+            "SELECT updated_on FROM app_update_dates WHERE section='menu_cost'"
+        ).fetchone()
+        dates = [date for date in (saved_date[0] if saved_date else None, price_update_date(conn)) if date]
+    st.caption(f"업데이트 날짜 · {max(dates) if dates else '기록 없음'}")
     if is_admin:
         st.markdown("전체 메뉴의 마진을 분석합니다. **판매가(원)를 더블클릭하여 수정한 뒤 반드시 아래의 [저장하기] 버튼을 누르세요.**")
     else:
@@ -433,6 +460,7 @@ elif menu == "메뉴 원가표":
                         cursor = conn.cursor()
                         for _, row in edited_df.iterrows():
                             cursor.execute("INSERT OR REPLACE INTO menu_prices (menu_name, sell_price) VALUES (?, ?)", (row['메뉴명'], row['적용 판매가(원)']))
+                        mark_cost_update(cursor)
                         conn.commit()
                         conn.close()
                         st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
@@ -444,7 +472,7 @@ elif menu == "메뉴 원가표":
     show_oyster_costs(expanded=True)
 
 # --- 기능 2: 메뉴별 원가/마진 분석 ---
-elif menu == "조리 레시피":
+elif menu == "조리 매뉴얼":
     from recipe_view import show_recipes
 
     show_recipes(st, get_connection, is_admin)
@@ -526,6 +554,7 @@ elif menu == "원가용 레시피 관리":
                                     INSERT INTO menu_bom (menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks)
                                     VALUES (?, ?, ?, ?, ?, ?)
                                 """, (menu_cat, m_name, w_val, ing_name, row[qty_col], remarks_val))
+                            mark_cost_update(cursor)
                         st.cache_data.clear()
                         st.rerun()
 
@@ -571,6 +600,7 @@ elif menu == "원가용 레시피 관리":
                             INSERT INTO menu_bom (menu_type, menu_name, sell_price_or_weight, ingredient_name, input_qty, remarks)
                             VALUES (?, ?, ?, ?, ?, ?)
                         """, (menu_cat, m_name, w_val, ing_name, row['input_qty'], remarks_val))
+                mark_cost_update(cursor)
                 conn.commit()
                 conn.close()
                 st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
@@ -659,6 +689,7 @@ elif menu == "식재료 정보 관리":
                             UPDATE ingredients SET item_name=?, tax_type=?, supply_price=?, loss_rate=?, total_capacity=? WHERE item_code=?
                         """, (name, row["tax_type"], price, row["loss_rate"], row["total_capacity"], code))
                         record_price_change(cursor, code, name, old[0], price)
+                    mark_cost_update(cursor)
                 st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
                 st.success("동기화 완료!")
                 st.rerun()
@@ -672,15 +703,29 @@ elif menu == "단가 갱신":
 
         show_price_update(st, get_connection, record_price_change)
 
-elif menu == "식재료 단가":
-    st.subheader("식재료 단가")
+elif menu == "식재료단가 · 푸디스트 기준":
+    st.subheader("식재료단가 · 푸디스트 기준")
+    with closing(get_connection()) as conn:
+        price_date = price_update_date(conn)
+    st.caption(f"기준날짜 · {price_date or '기록 없음'}")
     current, history = st.tabs(["현재 단가", "변동 이력"])
     with current:
         with closing(get_connection()) as conn:
             ingredients = pd.read_sql_query("""
-                SELECT item_code AS 상품코드, item_name AS 식재료,
-                       supply_price AS 기준단가, total_capacity AS 포장용량, unit AS 단위
-                FROM ingredients ORDER BY item_name
+                WITH latest AS (
+                    SELECT item_code, old_price, new_price,
+                           ROW_NUMBER() OVER (PARTITION BY item_code ORDER BY update_date DESC, id DESC) AS seq
+                    FROM price_history
+                )
+                SELECT i.item_code AS 상품코드, i.item_name AS 식재료,
+                       i.supply_price AS 기준단가, i.total_capacity AS 포장용량, i.unit AS 단위,
+                       i.supply_price - latest.old_price AS 변동액,
+                       100.0 * (i.supply_price - latest.old_price) / NULLIF(latest.old_price, 0) AS "변동률"
+                FROM ingredients AS i
+                LEFT JOIN latest ON i.item_code = latest.item_code AND latest.seq = 1
+                    AND latest.new_price = i.supply_price
+                WHERE i.item_code GLOB 'F[0-9]*'
+                ORDER BY i.item_name
             """, conn)
         keyword = st.text_input("식재료명 또는 상품코드 검색", key="ingredient_price_search").strip()
         if keyword:
@@ -688,7 +733,10 @@ elif menu == "식재료 단가":
                 lambda col: col.str.contains(keyword, case=False, na=False, regex=False)
             )
             ingredients = ingredients[match.any(axis=1)]
-        st.dataframe(ingredients.style.format({"기준단가": "{:,.2f}원", "포장용량": "{:,.0f}"}),
+        st.dataframe(ingredients.style.format({
+                         "기준단가": "{:,.2f}원", "포장용량": "{:,.0f}",
+                         "변동액": "{:+,.2f}원", "변동률": "{:+.1f}%",
+                     }, na_rep="—"),
                      hide_index=True, use_container_width=True)
     with history:
         conn = get_connection()
