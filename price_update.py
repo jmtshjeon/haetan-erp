@@ -1,4 +1,5 @@
 from contextlib import closing
+from hashlib import sha256
 from math import isfinite
 
 import pandas as pd
@@ -97,11 +98,23 @@ def show_price_update(st, get_connection, record_price_change):
 
     if changes:
         st.markdown("#### 바뀐 단가")
+        signature = sha256(repr(changes).encode("utf-8")).hexdigest()
+        state_key = "price_update_bulk_selection"
+        saved_signature, revision, select_all = st.session_state.get(state_key, ("", 0, False))
+        if saved_signature != signature:
+            revision, select_all = 0, False
+        select_column, clear_column, _ = st.columns([1, 1, 4])
+        if select_column.button("전체 선택", key="price_update_select_all"):
+            revision, select_all = revision + 1, True
+        if clear_column.button("선택 해제", key="price_update_clear_selection"):
+            revision, select_all = revision + 1, False
+        st.session_state[state_key] = signature, revision, select_all
         table = pd.DataFrame(changes)
-        table.insert(0, "반영", False)
+        table.insert(0, "반영", select_all)
         edited = st.data_editor(
             table, disabled=[name for name in table if name != "반영"],
             hide_index=True, use_container_width=True,
+            key=f"price_update_editor:{signature}:{revision}",
         )
         selected_codes = set(edited.loc[edited["반영"], "상품코드"])
         chosen = [row for row in changes if row["상품코드"] in selected_codes]
