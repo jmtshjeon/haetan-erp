@@ -191,9 +191,38 @@ st.components.v1.html(
 logo = APP_DIR / "logo.png"
 if not logo.is_file():
     logo = APP_DIR / "logo.png.jpg"
-if logo.is_file():
-    st.sidebar.image(str(logo), width=145)
-st.sidebar.markdown(f"### {APP_NAME}")
+st.markdown("""
+    <style>
+    @media (min-width: 768px) {
+        .st-key-sidebar-brand {
+            padding: 14px 14px 10px;
+            border: 1px solid rgba(110, 126, 172, .35);
+            border-top: 4px solid #263d88;
+            border-radius: 12px;
+            background: linear-gradient(145deg, rgba(71, 99, 181, .14), transparent 70%);
+        }
+        .st-key-sidebar-brand [data-testid="stImage"] {
+            display: flex;
+            justify-content: center;
+        }
+        .st-key-sidebar-brand [data-testid="stImage"] img {
+            width: 210px !important;
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+        .st-key-sidebar-brand h3 {
+            text-align: center;
+            padding: 0 0 4px;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
+with st.sidebar:
+    with st.container(key="sidebar-brand"):
+        if logo.is_file():
+            st.image(str(logo), width=145)
+        st.markdown(f"### {APP_NAME}")
 
 st.sidebar.markdown("---")
 
