@@ -192,7 +192,7 @@ logo = APP_DIR / "logo.png"
 if not logo.is_file():
     logo = APP_DIR / "logo.png.jpg"
 if logo.is_file():
-    st.sidebar.image(str(logo), use_container_width=True)
+    st.sidebar.image(str(logo), width=145)
 st.sidebar.markdown(f"### {APP_NAME}")
 
 st.sidebar.markdown("---")
@@ -230,6 +230,35 @@ else:
             "2. **조리 매뉴얼**에서 분류와 메뉴 이름을 눌러 조리법을 봐요.\n"
             "3. **식재료단가**에서 현재 단가와 변동 이력을 확인해요."
         )
+
+if view == "가맹점 화면":
+    st.markdown("""
+        <style>
+        .st-key-franchise-mobile-header {display:none}
+        @media (max-width: 767px) {
+            .st-key-franchise-mobile-header {display:flex !important}
+            .st-key-franchise-mobile-header button {min-height:42px}
+        }
+        @media (min-width: 768px) {
+            .st-key-franchise_menu label p {font-size:1rem;line-height:1.4}
+            .st-key-pc-cost-heading h2 {font-size:1.9rem;letter-spacing:-.035em}
+            .pc-cost-category {display:flex;align-items:center;gap:.65rem;margin-top:.6rem;
+                border-left:4px solid #4263a1;padding-left:.65rem}
+            .pc-cost-category h4 {padding:0;margin:0;font-size:1.2rem}
+            .pc-cost-category span {font-size:.85rem;opacity:.75}
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    with st.container(key="franchise-mobile-header"):
+        st.markdown(f"### {APP_NAME}")
+        for column, label, target in zip(
+            st.columns(3), ("원가·마진", "조리 매뉴얼", "식재료단가"), franchise_menus
+        ):
+            column.button(
+                label, key=f"mobile_nav:{target}", use_container_width=True,
+                on_click=st.session_state.update, args=({"franchise_menu": target},),
+                type="primary" if menu == target else "secondary",
+            )
 
 OYSTER_COST_ESTIMATES = {
     "꽃삼겹 오징어굴보쌈": (43000, 17377),
@@ -387,7 +416,8 @@ if menu == "필독 · 관리자 모드 활용":
 """)
 
 elif menu == "해탄 메뉴 원가 및 마진표":
-    st.subheader("해탄 메뉴 원가 및 마진표")
+    with st.container(key="pc-cost-heading"):
+        st.subheader("해탄 메뉴 원가 및 마진표")
     with closing(get_connection()) as conn:
         saved_date = conn.execute(
             "SELECT updated_on FROM app_update_dates WHERE section='menu_cost'"
@@ -472,7 +502,10 @@ elif menu == "해탄 메뉴 원가 및 마진표":
                 }
                 </style>
             """, unsafe_allow_html=True)
-            st.caption("메뉴 이름을 누르면 원가와 마진을 볼 수 있습니다.")
+            with st.container(key="cost-desktop-help"):
+                st.caption("표에서 메뉴를 선택하면 아래에 원가 상세와 판매가 비교가 열립니다.")
+            with st.container(key="cost-mobile-help"):
+                st.caption("메뉴 이름을 누르면 원가와 마진이 펼쳐집니다.")
             with st.container(key="cost-mobile-simulator"):
                 with st.expander("우리 매장 판매가로 비교"):
                     name = st.selectbox("메뉴 선택", df_summary["메뉴명"].tolist(), key="mobile_cost_menu")
@@ -485,7 +518,11 @@ elif menu == "해탄 메뉴 원가 및 마진표":
                         if price > 0:
                             st.write(f"원가율 **{exact_cost / price:.1%}** · 예상 마진 **{int(price - exact_cost):,}원**")
             for group, visible in df_summary.groupby("카테고리", sort=False):
-                st.markdown(f"#### {group}")
+                st.markdown(
+                    f'<div class="pc-cost-category"><h4>{escape(group)}</h4>'
+                    f'<span>메뉴 {len(visible)}개</span></div>',
+                    unsafe_allow_html=True,
+                )
                 visible = visible.reset_index(drop=True)
                 with st.container(key=f"cost-mobile-list-{group}"):
                     st.markdown(mobile_cost_list(visible), unsafe_allow_html=True)
@@ -494,12 +531,21 @@ elif menu == "해탄 메뉴 원가 및 마진표":
                     "총 원가(원)": "{:,}",
                     "예상 마진(원)": "{:,.0f}",
                     "원가율(%)": "{:.1f}",
-                }, na_rep="—").map(color_cost_rate, subset=["원가율(%)"])
+                }, na_rep="—").map(color_cost_rate, subset=["원가율(%)"]).set_properties(
+                    subset=["메뉴명"], **{"font-weight": "bold"}
+                )
                 with st.container(key=f"cost-desktop-table-{group}"):
                     selection = st.dataframe(
                         styled_df, hide_index=True, use_container_width=True,
                         on_select="rerun", selection_mode="single-row", key=f"cost_overview:{group}",
-                        height=38 + 35 * len(visible),
+                        height=43 + 42 * len(visible), row_height=42,
+                        column_config={
+                            "메뉴명": st.column_config.TextColumn("메뉴명", width=240),
+                            "적용 판매가(원)": st.column_config.Column("판매가 (원)", width=115),
+                            "총 원가(원)": st.column_config.Column("이론원가 (원)", width=115),
+                            "예상 마진(원)": st.column_config.Column("예상 마진 (원)", width=115),
+                            "원가율(%)": st.column_config.Column("원가율 (%)", width=95),
+                        },
                     )
                     if selection.selection.rows:
                         row_index = selection.selection.rows[0]
