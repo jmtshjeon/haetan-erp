@@ -9,6 +9,31 @@ from tempfile import NamedTemporaryFile
 
 ROOT = Path(__file__).resolve().parent
 RECIPE_FOLDER = ROOT / "레시피"
+MENU_PHOTO_NAMES = {
+    "관자튀김 8개": "관자튀김",
+    "관자추가 8개": "관자추가",
+    "미나리추가 100g": "미나리추가",
+    "꽃삼겹 오징어굴보쌈": "오징어무침 통영굴보쌈한상",
+    "알배기 굴초무침": "알배기통영굴무침",
+    "통영 생굴 단품": "통영생굴",
+    "갓성비 세트": "갓성비세트",
+}
+APPETIZER_MENUS = {
+    "미나리백합탕", "오징어초무침", "오징어해장탕", "오징어묵은지전",
+    "골뱅이비빔칼국수", "오징어숙회", "아바이오징어순대SET",
+}
+
+
+def recipe_display_category(file):
+    category = file.parent.parent.name
+    name = file.parent.name.replace("／", "/")
+    if category == "최종메뉴":
+        if name == "날치알볶음밥":
+            return "추가 메뉴"
+        return "안주류" if name in APPETIZER_MENUS else "메인메뉴"
+    if category == "추가메뉴":
+        return "사이드" if name == "오징어만두튀김" else "추가 메뉴"
+    return category
 
 
 def find_photo(folder, stem):
@@ -17,6 +42,11 @@ def find_photo(folder, stem):
         if photo.is_file():
             return photo
     return None
+
+
+def find_menu_photo(menu):
+    folder = ROOT / "메뉴이미지"
+    return find_photo(folder, menu) or find_photo(folder, MENU_PHOTO_NAMES.get(menu, menu))
 
 
 def save_recipe(path, recipe, photos, original):
@@ -126,11 +156,18 @@ def render_recipe_page(st, get_connection, is_admin):
         st.info("등록된 레시피가 없습니다.")
         return
 
-    categories = sorted({file.parent.parent.name for file in files})
-    group = st.radio("메뉴 분류", ["전체 메뉴", *categories], horizontal=True)
+    categories = {recipe_display_category(file) for file in files}
+    order = ["메인메뉴", "점심특선", "안주류", "추가 메뉴", "사이드", "프랩"]
+    ordered_categories = [category for category in order if category in categories]
+    ordered_categories.extend(sorted(categories.difference(order)))
+    group = st.radio("메뉴 분류", ["전체 메뉴", *ordered_categories], horizontal=True)
     if group != "전체 메뉴":
-        files = [file for file in files if file.parent.parent.name == group]
-    selected = st.selectbox("메뉴 선택", files, format_func=lambda file: file.parent.name.replace("／", "/"))
+        files = [file for file in files if recipe_display_category(file) == group]
+    selected = st.radio(
+        "메뉴 선택", files, horizontal=True,
+        format_func=lambda file: file.parent.name.replace("／", "/"),
+        key=f"recipe_menu:{group}",
+    )
     recipe_file = selected
     category = selected.parent.parent.name
     menu = selected.parent.name.replace("／", "/")
@@ -162,7 +199,7 @@ def render_recipe_page(st, get_connection, is_admin):
     )
     cover_column, ingredients = st.columns([2, 3])
     with cover_column:
-        cover = find_photo(ROOT / "메뉴이미지", menu)
+        cover = find_menu_photo(menu)
         if cover:
             with st.container(key="recipe-cover"):
                 st.image(str(cover), width=380)

@@ -6,6 +6,7 @@ import io
 import re
 from pathlib import Path
 from contextlib import closing
+from recipe_view import find_menu_photo
 
 # --- [설정] 관리자 비밀번호 ---
 ADMIN_PASSWORD = os.getenv("HAETAN_ADMIN_PASSWORD")
@@ -202,6 +203,45 @@ if menu != "3. 조리 레시피":
         unsafe_allow_html=True
     )
 
+OYSTER_COST_ESTIMATES = {
+    "꽃삼겹 오징어굴보쌈": (43000, 17377),
+    "알배기 굴초무침": (22000, 7821),
+    "통영 생굴 단품": (13000, 3050),
+}
+
+
+def show_oyster_costs():
+    def rate_text(cost, price):
+        tenths = (cost * 2000 + price) // (2 * price)
+        return f"{tenths / 10:.1f}%"
+
+    with st.expander("시즌 메뉴 · 통영굴 3종"):
+        st.caption("11월 판매 재개 · B타입 기준판매가 · 공지 원가 기준 (생굴 13,000원/kg)")
+        rows = [
+            {
+                "메뉴": name,
+                "기준판매가": f"{price:,}원",
+                "참고 이론원가": f"약 {cost:,}원",
+                "원가율": rate_text(cost, price),
+            }
+            for name, (price, cost) in OYSTER_COST_ESTIMATES.items()
+        ]
+        st.table(pd.DataFrame(rows))
+        name = st.selectbox("판매가를 비교할 굴 메뉴", list(OYSTER_COST_ESTIMATES))
+        photo = find_menu_photo(name)
+        if photo:
+            st.image(str(photo), caption=name, width=280)
+        price, cost = OYSTER_COST_ESTIMATES[name]
+        actual = st.number_input(
+            "우리 매장 판매가(원)", min_value=0, value=price, step=1000,
+            key=f"oyster_price:{name}",
+        )
+        if actual > 0:
+            rate, margin = st.columns(2)
+            rate.metric("원가율", rate_text(cost, actual))
+            margin.metric("판매가 − 참고 이론원가", f"{actual - cost:,}원")
+
+
 def menu_display_category(category, name):
     if "하이볼" in name:
         return "하이볼"
@@ -230,14 +270,9 @@ def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
     img_col, data_col = st.columns([1, 2])
 
     with img_col:
-        img_folder = APP_DIR / "메뉴이미지" 
-        img_path_jpg = os.path.join(img_folder, f"{selected_m_name}.jpg")
-        img_path_png = os.path.join(img_folder, f"{selected_m_name}.png")
-
-        if os.path.exists(img_path_jpg):
-            st.image(img_path_jpg, caption=selected_m_name, use_container_width=True)
-        elif os.path.exists(img_path_png):
-            st.image(img_path_png, caption=selected_m_name, use_container_width=True)
+        photo = find_menu_photo(selected_m_name)
+        if photo:
+            st.image(str(photo), caption=selected_m_name, use_container_width=True)
         else:
             st.markdown(
                 f"<div style='background-color:#e5e7eb; height:200px; display:flex; align-items:center; justify-content:center; border-radius:10px;'><p style='color:#6b7280; text-align:center; font-size:14px; margin:0;'>📷 이미지가 없습니다</p></div>", 
@@ -258,12 +293,12 @@ def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
             recipe_details.append({
                 "식재료/프랩명": ing_name,
                 "비고(설명)": remarks_text,
-                "투입량(g/EA)": qty,
+                "투입량": qty,
                 "1단위당 단가(원)": unit_p,
                 "발생 원가(원)": cost
             })
         st.table(pd.DataFrame(recipe_details).style.format({
-            "투입량(g/EA)": "{:,.1f}", 
+            "투입량": "{:,.1f}", 
             "1단위당 단가(원)": "{:,.2f}", 
             "발생 원가(원)": "{:,.1f}"
         }))
@@ -282,6 +317,7 @@ def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
 # --- 기능 1: 전체 메뉴 종합 요약 분석표 ---
 if menu == "1. 전체 메뉴 원가표":
     st.subheader("전체 메뉴 원가표")
+    show_oyster_costs()
     if is_admin:
         st.markdown("전체 메뉴의 마진을 분석합니다. **판매가(원)를 더블클릭하여 수정한 뒤 반드시 아래의 [저장하기] 버튼을 누르세요.**")
     else:
@@ -334,7 +370,7 @@ if menu == "1. 전체 메뉴 원가표":
         if summary_data:
             df_summary = pd.DataFrame(summary_data)
             
-            category_order = {"메뉴": 1, "점심특선": 2, "추가메뉴": 3, "하이볼": 4, "주류/음료": 5}
+            category_order = {"메뉴": 1, "점심특선": 2, "추가메뉴": 3, "사이드": 4, "하이볼": 5}
             df_summary['sort_key'] = df_summary['카테고리'].map(category_order).fillna(99)
             df_summary = df_summary.sort_values(by=['sort_key', '메뉴명']).drop(columns=['sort_key'])
 
@@ -397,6 +433,7 @@ if menu == "1. 전체 메뉴 원가표":
 
 # --- 기능 2: 메뉴별 원가/마진 분석 ---
 elif menu == "2. 메뉴별 원가·마진":
+    show_oyster_costs()
     st.subheader("📈 카테고리별 원가/마진 상세 분석")
     st.markdown("상단의 리스트에서 분석할 메뉴를 클릭하시면 아래에 상세 내역이 표시됩니다.")
     
@@ -416,7 +453,7 @@ elif menu == "2. 메뉴별 원가·마진":
             for cat, name in zip(sales_menus_df["menu_type"], sales_menus_df["menu_name"])
         ]
         existing = sales_menus_df["display_category"].dropna().unique().tolist()
-        order = ["메뉴", "점심특선", "추가메뉴", "하이볼", "주류/음료"]
+        order = ["메뉴", "점심특선", "추가메뉴", "사이드", "하이볼"]
         category_order = [cat for cat in dict.fromkeys(order + existing) if cat in existing]
         if not category_order:
             st.info("현재 등록된 판매 메뉴가 없습니다.")
@@ -535,7 +572,7 @@ elif menu == "5. 원가용 레시피 관리":
             df_bom_view,
             column_config={
                 "id": None, 
-                "menu_type": st.column_config.SelectboxColumn("메뉴분류", options=["프랩", "최종메뉴", "점심특선", "추가메뉴", "주류/음료"], disabled=not is_admin),
+                "menu_type": st.column_config.SelectboxColumn("메뉴분류", options=["프랩", "최종메뉴", "점심특선", "추가메뉴", "사이드", "주류/음료"], disabled=not is_admin),
                 "menu_name": st.column_config.TextColumn("메뉴명", disabled=not is_admin),
                 "sell_price_or_weight": st.column_config.NumberColumn("프랩완성중량(판매가)", format="%d", disabled=not is_admin),
                 "ingredient_name": st.column_config.TextColumn("구성 식재료명", disabled=not is_admin),
@@ -641,7 +678,7 @@ elif menu == "6. 식재료 정보 관리":
                 cursor = conn.cursor()
                 for idx, row in edited_df.iterrows():
                     cursor.execute("""
-                        UPDATE ingredients SET item_name=?, tax_type=?, supply_price=?, loss_rate=?, total_capacity=?, unit='g' WHERE item_code=?
+                        UPDATE ingredients SET item_name=?, tax_type=?, supply_price=?, loss_rate=?, total_capacity=? WHERE item_code=?
                     """, (row['item_name'].strip(), row['tax_type'], row['supply_price'], row['loss_rate'], row['total_capacity'], row['item_code']))
                 conn.commit()
                 st.cache_data.clear() # 💡 데이터 변경 시 캐시 삭제
@@ -705,11 +742,13 @@ elif menu == "7. 식재료 단가 업데이트":
                         
                         item_unit = 'g' 
                         
-                        cursor.execute("SELECT supply_price FROM ingredients WHERE item_code=?", (code,))
+                        cursor.execute("SELECT supply_price, total_capacity, unit FROM ingredients WHERE item_code=?", (code,))
                         db_result = cursor.fetchone()
                         
                         if db_result:
-                            old_price = db_result[0]
+                            old_price, old_capacity, item_unit = db_result
+                            if item_unit != "g" or total_weight_kg <= 0:
+                                capacity = old_capacity
                             cursor.execute("UPDATE ingredients SET supply_price=?, tax_type=?, total_capacity=?, unit=? WHERE item_code=?", (price, t_type, capacity, item_unit, code))
                             update_count += 1
                             
@@ -717,10 +756,10 @@ elif menu == "7. 식재료 단가 업데이트":
                                 diff = price - old_price
                                 diff_str = f"🔺 +{int(diff):,}원" if diff > 0 else f"🔻 {int(diff):,}원"
                                 cursor.execute("INSERT INTO price_history (item_code, item_name, old_price, new_price, change_amount) VALUES (?, ?, ?, ?, ?)", (code, name, old_price, price, diff))
-                                updated_items.append({"상품명": name, "용량": f"{int(capacity)}g", "기존단가": f"{int(old_price):,}원", "변경단가": f"{int(price):,}원", "변동액": diff_str})
+                                updated_items.append({"상품명": name, "용량": f"{capacity:g} {item_unit}", "기존단가": f"{int(old_price):,}원", "변경단가": f"{int(price):,}원", "변동액": diff_str})
                         else:
                             cursor.execute("INSERT INTO ingredients (item_code, item_name, tax_type, supply_price, loss_rate, total_capacity, unit) VALUES (?, ?, ?, ?, 0.0, ?, ?)", (code, name, t_type, price, capacity, item_unit))
-                            new_items.append({"상품명": name, "용량": f"{int(capacity)}g", "신규등록단가": f"{int(price):,}원"})
+                            new_items.append({"상품명": name, "용량": f"{capacity:g} {item_unit}", "신규등록단가": f"{int(price):,}원"})
                             
                     conn.commit()
                     conn.close()
