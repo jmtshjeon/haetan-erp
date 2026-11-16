@@ -171,7 +171,8 @@ def calculate_unit_prices():
     return prices, df_bom, list(missing_ingredients)
 
 # --- 2. Streamlit UI 공통 설정 ---
-st.set_page_config(page_title="해탄 원가관리 시스템", page_icon="🦑", layout="wide")
+APP_NAME = "해탄 가맹점 운영 가이드"
+st.set_page_config(page_title=APP_NAME, page_icon="🦑", layout="wide")
 
 # 💡 [핵심 최적화] 세션 유지(Keep-Alive) 스크립트 삽입
 # 브라우저가 열려있는 동안 1분마다 백그라운드 신호를 보내 세션 끊김을 방지합니다.
@@ -191,8 +192,7 @@ if not logo.is_file():
     logo = APP_DIR / "logo.png.jpg"
 if logo.is_file():
     st.sidebar.image(str(logo), use_container_width=True)
-else:
-    st.sidebar.markdown("### 🏢 HAETAN F&B")
+st.sidebar.markdown(f"### {APP_NAME}")
 
 st.sidebar.markdown("---")
 
@@ -222,6 +222,13 @@ if view == "관리자 전용":
     menu = st.sidebar.radio("[관리자 전용]", admin_menus, key="admin_menu")
 else:
     menu = st.sidebar.radio("가맹점용", franchise_menus, key="franchise_menu")
+    with st.sidebar.expander("보는 법"):
+        st.markdown(
+            "1. **원가 및 마진표**에서 메뉴 행을 눌러 상세를 확인해요. "
+            "우리 매장 판매가를 입력해 원가율과 마진을 비교할 수 있어요.\n"
+            "2. **조리 매뉴얼**에서 분류와 메뉴 이름을 눌러 조리법을 봐요.\n"
+            "3. **식재료단가**에서 현재 단가와 변동 이력을 확인해요."
+        )
 
 OYSTER_COST_ESTIMATES = {
     "꽃삼겹 오징어굴보쌈": (43000, 17377),
