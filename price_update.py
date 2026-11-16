@@ -122,7 +122,69 @@ def apply_prices(conn, chosen, record_price_change, mark_cost_update):
             mark_cost_update(cursor)
 
 
+def apply_reviewed_price(conn, original, price, capacity, record_price_change, mark_cost_update):
+    name, old_price, old_capacity, unit, code = original
+    if not isfinite(price) or price <= 0 or not isfinite(capacity) or capacity <= 0:
+        raise ValueError("단가와 포장용량은 0보다 커야 합니다.")
+    if (price, capacity) == (old_price, old_capacity):
+        raise ValueError("단가 또는 포장용량을 변경해 주세요.")
+    with conn:
+        cursor = conn.execute(
+            """UPDATE ingredients SET supply_price=?, total_capacity=?
+               WHERE item_code=? AND item_name IS ? AND supply_price IS ?
+               AND total_capacity IS ? AND unit IS ?""",
+            (price, capacity, code, name, old_price, old_capacity, unit),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("품목 정보가 먼저 변경되었습니다. 다시 비교한 후 저장해 주세요.")
+        record_price_change(cursor, code, name, old_price, price)
+        mark_cost_update(cursor)
+
+
+def show_review_editor(st, rows, master, get_connection, record_price_change, mark_cost_update):
+    linked = {row["상품코드"]: row for row in rows if row["앱 상품코드"] in master}
+    if not linked:
+        return
+    source_code = st.selectbox(
+        "직접 수정할 품목", list(linked), index=None, key="price_review_item",
+        format_func=lambda code: f"{linked[code]['앱 재료명']} · {code}",
+        placeholder="품목을 선택해 주세요",
+    )
+    if source_code is None:
+        return
+    row = linked[source_code]
+    code = row["앱 상품코드"]
+    name, old_price, old_capacity, unit = master[code]
+    original = (name, old_price, old_capacity, unit, code)
+    st.write(f"**확인 사항** · {row['확인 사항']}")
+    quoted = row["조회 단가"]
+    quoted_text = f"{int(quoted):,}원" if quoted is not None else "없음"
+    st.caption(f"조회 상품 {source_code} · {row['조회 상품명']} · {row['조회 규격'] or '규격 없음'} · {quoted_text}")
+    st.caption(f"저장 대상 {code} · {name} · 기존 포장 {row['앱 포장 기준'] or '미등록'}")
+    signature = sha256(repr((source_code, original)).encode("utf-8")).hexdigest()
+    with st.form(f"price_review:{signature}"):
+        price_column, capacity_column = st.columns(2)
+        price = price_column.number_input("적용 단가 (원)", min_value=0.0,
+                                          value=float(old_price or 0), step=1.0, format="%d")
+        capacity = capacity_column.number_input(f"적용 포장용량 ({unit or '기존 단위'})", min_value=0.0,
+                                                value=float(old_capacity or 0), step=1.0)
+        st.caption("기존 값에서 시작합니다. 적용할 가격과 포장용량을 입력해 주세요.")
+        if st.form_submit_button("이 품목 저장"):
+            try:
+                with closing(get_connection()) as conn:
+                    apply_reviewed_price(conn, original, price, capacity, record_price_change, mark_cost_update)
+            except ValueError as error:
+                st.error(str(error))
+            else:
+                st.cache_data.clear()
+                st.session_state["price_review_saved"] = name
+                st.rerun()
+
+
 def show_price_update(st, get_connection, record_price_change, mark_cost_update):
+    reviewed_name = st.session_state.pop("price_review_saved", None)
+    if reviewed_name:
+        st.success(f"{reviewed_name}의 적용 값을 저장했습니다. 단가가 바뀐 경우 변동 이력에서 확인할 수 있습니다.")
     applied_count = st.session_state.pop("price_update_applied_count", None)
     if applied_count is not None:
         st.success(f"{applied_count}개 단가를 저장하고 변동 이력에 기록했습니다.")
@@ -201,13 +263,11 @@ def show_price_update(st, get_connection, record_price_change, mark_cost_update)
     if needs_review:
         with st.expander(f"확인 필요 · {len(needs_review)}개", expanded=True):
             st.caption(
-                "이 목록은 자동 반영되지 않습니다. 같은 상품·포장 기준이면 관리자 전용의 "
-                "‘식재료 정보 관리’에서 단가를 직접 수정하세요. 실제 포장량이 바뀌었다면 단가와 포장용량을 함께 수정하세요. "
-                "다른 상품이나 완성품·부재료 묶음이면 "
-                "기존 단가를 유지하고, 배합 원가가 확인되면 그 값을 직접 수정하세요."
+                "앱 재료와 조회 상품의 규격을 비교하세요. 원가에 쓸 기준을 확인한 뒤 아래에서 한 품목씩 저장할 수 있습니다."
             )
             st.dataframe(pd.DataFrame(needs_review), hide_index=True, use_container_width=True,
                          column_config=price_columns)
+            show_review_editor(st, needs_review, master, get_connection, record_price_change, mark_cost_update)
     if skipped:
         with st.expander(f"원가 연동 대상 아님 · {len(skipped)}개 건너뜀"):
             st.caption("현재 메뉴 원가에 쓰이는 식재료 코드와 연결되지 않은 품목입니다. 실제 사용 품목이 여기 있으면 앱의 등록 코드와 조회 코드를 확인하세요.")
