@@ -6,7 +6,7 @@ import io
 import re
 from pathlib import Path
 from contextlib import closing
-from recipe_view import MENU_BOARD_ORDER, find_menu_photo, menu_board_category, select_menu_group
+from recipe_view import MENU_BOARD_ORDER, find_menu_photo, menu_board_category
 
 # --- [설정] 관리자 비밀번호 ---
 ADMIN_PASSWORD = os.getenv("HAETAN_ADMIN_PASSWORD")
@@ -442,18 +442,21 @@ elif menu == "2. 메뉴별 원가·마진":
             menu_board_category(cat, name)
             for cat, name in zip(sales_menus_df["menu_type"], sales_menus_df["menu_name"])
         ]
-        sales_menus_df = sales_menus_df.dropna(subset=["display_category"])
-        if sales_menus_df.empty:
+        existing = sales_menus_df["display_category"].dropna().unique().tolist()
+        order = list(MENU_BOARD_ORDER)
+        category_order = [cat for cat in dict.fromkeys(order + existing) if cat in existing]
+        if not category_order:
             st.info("현재 등록된 판매 메뉴가 없습니다.")
-        else:
-            group = select_menu_group(st, sales_menus_df["display_category"], key="cost_detail_group")
-            if group != "전체 메뉴":
-                sales_menus_df = sales_menus_df.loc[sales_menus_df["display_category"] == group]
-            selected_m_name = st.radio(
-                "메뉴 선택", sorted(sales_menus_df["menu_name"].unique()),
-                horizontal=True, key=f"cost_detail_menu:{group}",
-            )
-            show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices)
+        tabs = st.tabs(category_order) if category_order else []
+        for tab, cat in zip(tabs, category_order):
+            with tab:
+                cat_menus = sales_menus_df.loc[sales_menus_df["display_category"] == cat, "menu_name"].unique()
+                selected_m_name = st.radio(
+                    f"👇 분석하실 **[{cat}]** 메뉴를 선택해주세요:",
+                    sorted(cat_menus), horizontal=True, key=f"radio_{cat}",
+                )
+                st.markdown("---")
+                show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices)
 
 # --- 기능 3: 레시피 DB 업로드 ---
 elif menu == "3. 조리 레시피":

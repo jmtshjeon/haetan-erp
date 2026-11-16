@@ -45,13 +45,6 @@ def recipe_display_category(file):
     return menu_board_category(category, name)
 
 
-def select_menu_group(st, categories, *, key):
-    existing = set(categories) - {None}
-    ordered = [category for category in MENU_BOARD_ORDER if category in existing]
-    ordered.extend(sorted(existing.difference(MENU_BOARD_ORDER)))
-    return st.radio("메뉴 분류", ["전체 메뉴", *ordered], horizontal=True, key=key)
-
-
 def find_photo(folder, stem):
     for extension in (".jpg", ".jpeg", ".png", ".webp"):
         photo = folder / f"{stem}{extension}"
@@ -172,14 +165,23 @@ def render_recipe_page(st, get_connection, is_admin):
         st.info("등록된 레시피가 없습니다.")
         return
 
-    group = select_menu_group(st, map(recipe_display_category, files), key="recipe_group")
-    if group != "전체 메뉴":
-        files = [file for file in files if recipe_display_category(file) == group]
-    selected = st.radio(
-        "메뉴 선택", files, horizontal=True,
-        format_func=lambda file: file.parent.name.replace("／", "/"),
-        key=f"recipe_menu:{group}",
-    )
+    groups = {recipe_display_category(file) for file in files}
+    ordered = [group for group in MENU_BOARD_ORDER if group in groups]
+    ordered.extend(sorted(groups.difference(MENU_BOARD_ORDER)))
+    for group, tab in zip(ordered, st.tabs(ordered)):
+        with tab:
+            group_files = [file for file in files if recipe_display_category(file) == group]
+            selected = st.radio(
+                f"**[{group}]** 레시피를 선택해 주세요:",
+                group_files, horizontal=True,
+                format_func=lambda file: file.parent.name.replace("／", "/"),
+                key=f"recipe_menu:{group}",
+            )
+            st.markdown("---")
+            render_selected_recipe(st, get_connection, is_admin, selected)
+
+
+def render_selected_recipe(st, get_connection, is_admin, selected):
     recipe_file = selected
     category = selected.parent.parent.name
     menu = selected.parent.name.replace("／", "/")
