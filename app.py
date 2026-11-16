@@ -189,15 +189,16 @@ if is_admin:
 else:
     st.sidebar.info("👀 보기 전용 모드 (수정 불가)")
 
-st.markdown(
-    """
-    <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
-        <h1 style='text-align: center; color: #1f2937;'>📊 F&B 식자재 원가 통합 관리 대시보드</h1>
-        <p style='text-align: center; color: #4b5563;'>가맹점 상권별 탄력 판가 적용 및 세트메뉴 원가 연산 시스템</p>
-    </div>
-    """, 
-    unsafe_allow_html=True
-)
+if menu != "레시피":
+    st.markdown(
+        """
+        <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
+            <h1 style='text-align: center; color: #1f2937;'>📊 F&B 식자재 원가 통합 관리 대시보드</h1>
+            <p style='text-align: center; color: #4b5563;'>가맹점 상권별 탄력 판가 적용 및 세트메뉴 원가 연산 시스템</p>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
 
 # --- 기능 1: 전체 메뉴 종합 요약 분석표 ---
 if menu == "1. 메뉴 원가 종합분석표":

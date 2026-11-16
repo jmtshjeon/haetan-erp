@@ -101,6 +101,22 @@ def edit_recipe(st, path, recipe, rows, original):
 
 
 def show_recipes(st, get_connection, is_admin=False):
+    st.markdown(
+        "<style>.st-key-recipe-page{max-width:980px;margin-inline:auto}"
+        ".st-key-recipe-page .recipe-table{width:100%;max-width:520px;table-layout:fixed;border-collapse:collapse;font-size:.9rem}"
+        ".st-key-recipe-page .recipe-table td{padding:5px 8px;border-bottom:1px solid rgba(128,128,128,.23);overflow-wrap:anywhere}"
+        ".st-key-recipe-page .recipe-table thead th{padding:6px 8px;background:rgba(128,128,128,.14);text-align:left;font-weight:700}"
+        ".st-key-recipe-page .recipe-table thead th:last-child,.st-key-recipe-page .recipe-table td:last-child"
+        "{width:6rem;text-align:right;white-space:nowrap;border-left:1px solid rgba(128,128,128,.23)}"
+        ".st-key-recipe-page .recipe-photo-slot{min-height:76px;display:grid;place-items:center;"
+        "border:1px dashed rgba(128,128,128,.55);border-radius:6px;font-size:.85rem}</style>",
+        unsafe_allow_html=True,
+    )
+    with st.container(key="recipe-page"):
+        render_recipe_page(st, get_connection, is_admin)
+
+
+def render_recipe_page(st, get_connection, is_admin):
     st.subheader("레시피")
     categories = sorted({file.parent.parent.name for file in RECIPE_FOLDER.glob("*/*/레시피.json")})
     if not categories:
@@ -137,19 +153,18 @@ def show_recipes(st, get_connection, is_admin=False):
         f'<p style="margin:2px 0 8px">{escape(recipe["servings"])}</p>',
         unsafe_allow_html=True,
     )
-    _, ingredient_heading = st.columns([2, 3])
-    ingredient_heading.markdown("#### 재료")
-    cover_column, ingredients = st.columns([2, 3])
+    cover_column, ingredients = st.columns([1, 2])
     with cover_column:
         cover = find_photo(ROOT / "메뉴이미지", menu)
         if cover:
-            st.image(str(cover), use_container_width=True)
+            st.image(str(cover), width=190)
         else:
             st.info("자료 사진 없음")
     with ingredients:
         if rows:
             labels = recipe.get("ingredient_labels", {})
             toppings = set(recipe.get("toppings", []))
+            table_rows = []
             for heading, group in (
                 ("", [row for row in rows if row[0].strip() not in toppings]),
                 ("제공 전 토핑", [row for row in rows if row[0].strip() in toppings]),
@@ -157,22 +172,33 @@ def show_recipes(st, get_connection, is_admin=False):
                 if not group:
                     continue
                 if heading:
-                    st.markdown(f"**{heading}**")
-                st.table([
-                    {"재료": labels.get(name.strip(), name), "투입량": f"{quantity:g} {unit or ''}".strip()}
-                    for name, quantity, unit in group
-                ])
+                    table_rows.append(f'<tr><th colspan="2" style="text-align:left;padding:9px 8px 3px">{heading}</th></tr>')
+                for name, quantity, unit in group:
+                    label = escape(labels.get(name.strip(), name))
+                    amount = escape(f"{quantity:g} {unit or ''}".strip())
+                    table_rows.append(f"<tr><td>{label}</td><td>{amount}</td></tr>")
+            st.markdown(
+                '<table class="recipe-table"><thead><tr>'
+                '<th scope="col">재료</th><th scope="col">투입량</th></tr></thead><tbody>'
+                + "".join(table_rows) + "</tbody></table>",
+                unsafe_allow_html=True,
+            )
         else:
             st.info("원가 데이터에 등록된 재료가 없습니다.")
 
-    st.markdown("#### 조리법")
+    st.divider()
+    st.markdown("### 조리법")
     preparation = recipe.get("preparation")
     if preparation:
-        st.markdown("**조리 전 준비**")
+        st.markdown("#### 조리 전 준비")
         st.markdown("\n".join(f"- {item}" for item in preparation))
+        st.divider()
+    st.markdown("#### 조리")
     for index, step in enumerate(recipe["steps"], start=1):
-        st.markdown(f"**{index}. {step['title']}**")
-        for position, photo_column in enumerate(st.columns(3), start=1):
+        if len(recipe["steps"]) > 1:
+            st.markdown(f"**{step['title']}**")
+        for position, column in enumerate(st.columns(3), start=1):
+            photo_column = column.container(border=True)
             note = photo_note(step, position)
             name = note.get("photo")
             photo = photos.get(name)
@@ -187,7 +213,10 @@ def show_recipes(st, get_connection, is_admin=False):
             if photo:
                 photo_column.image(str(photo) if isinstance(photo, Path) else photo, use_container_width=True)
             else:
-                photo_column.info(f"사진 {position} 추가 예정")
+                photo_column.markdown(
+                    f'<div class="recipe-photo-slot">사진 {position} 추가 예정</div>',
+                    unsafe_allow_html=True,
+                )
             if note.get("title"):
                 photo_column.markdown(f"**{note['title']}**")
             photo_column.write(note.get("description") or "조리 설명 추가 예정")
@@ -197,7 +226,8 @@ def show_recipes(st, get_connection, is_admin=False):
                     f'<small style="color:#d32f2f">주의사항 · {escape(caution)}</small>',
                     unsafe_allow_html=True,
                 )
-    st.markdown("#### 제공법")
+    st.divider()
+    st.markdown("### 제공법")
     st.write(recipe.get("serving_method") or "제공 방법 추가 예정")
     serving_caution = recipe.get("serving_caution", "").strip()
     if serving_caution:
