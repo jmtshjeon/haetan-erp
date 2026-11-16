@@ -235,37 +235,18 @@ def render_selected_recipe(st, get_connection, is_admin, selected):
     )
     cover = find_menu_photo(menu)
     groups = recipe_ingredient_groups(recipe, rows, category)
-    try:
-        from recipe_pdf import build_recipe_pdf
-
-        sections = [("text", basis)]
-        if cover:
-            sections.append(("image", cover))
-        for heading, group in groups:
-            sections.extend((("heading", heading), ("table", [("재료", "투입량"), *group])))
-        if not groups:
-            sections.append(("text", "원가 데이터에 등록된 재료가 없습니다."))
-        sections.extend(recipe_instruction_sections(recipe_file, recipe, photos))
-        for prep_name, (weight, prep_rows) in prep_batches.items():
-            prep_file, prep_recipe = load_prep_recipe(prep_name)
-            sections.extend((("heading", f"필요한 프랩 · {prep_name}"),
-                             ("text", prep_yield_text(weight))))
-            for _, group in recipe_ingredient_groups(prep_recipe or {}, prep_rows, "프랩"):
-                sections.append(("table", [("재료", "배치 투입량"), *group]))
-            if prep_recipe:
-                sections.extend(recipe_instruction_sections(prep_file, prep_recipe, {}))
-            else:
-                sections.append(("text", "프랩 제조법 확인이 필요합니다."))
-        st.download_button(
-            "이 메뉴 조리 매뉴얼 PDF 다운로드",
-            data=lambda: build_recipe_pdf(menu, sections),
-            file_name=f"{menu.translate(str.maketrans('/\\:*?\"<>|', '／＼：＊？＂＜＞｜'))}_조리매뉴얼.pdf",
-            mime="application/pdf",
-            key=f"recipe-pdf:{category}/{menu}",
-            on_click="ignore",
-        )
-    except (ImportError, OSError, ValueError):
-        st.caption("PDF를 준비하지 못했습니다. 아래에서 조리 매뉴얼을 확인할 수 있습니다.")
+    sections = [("meta", basis)]
+    for heading, group in groups:
+        sections.extend((("heading", heading), ("table", [("재료", "투입량"), *group])))
+    if not groups:
+        sections.append(("text", "원가 데이터에 등록된 재료가 없습니다."))
+    sections.extend(recipe_instruction_sections(recipe_file, recipe, photos))
+    if prep_batches:
+        sections.extend((("heading", "참고 · 필요한 프랩"),
+                         ("text", " · ".join(prep_batches)),
+                         ("text", "제조량과 제조법은 앱의 ‘필요한 프랩’에서 별도 PDF로 확인하세요.")))
+    document_name = "프랩 제조 매뉴얼" if category == "프랩" else "조리 매뉴얼"
+    recipe_pdf_download(st, menu, sections, document_name, f"{category}/{menu}", cover)
 
     cover_column, ingredients = st.columns([2, 3])
     with cover_column:
@@ -294,7 +275,7 @@ def render_selected_recipe(st, get_connection, is_admin, selected):
         st.caption("위 재료표는 이 메뉴의 사용량이고, 아래 프랩 재료는 한 번 만드는 분량입니다.")
         for prep_name, (yield_weight, prep_rows) in prep_batches.items():
             with st.expander(prep_name):
-                render_prep_batch(st, prep_name, yield_weight, prep_rows)
+                render_prep_batch(st, prep_name, yield_weight, prep_rows, f"{category}/{menu}")
 
     st.divider()
     render_recipe_instructions(st, recipe_file, recipe, photos)
@@ -310,6 +291,23 @@ def recipe_ingredient_groups(recipe, rows, category):
     ingredient_heading = "1회 제조 재료" if category == "프랩" else "조리 재료"
     return [(heading, group) for heading, group in
             ((ingredient_heading, ingredients), ("제공 전 토핑", garnishes)) if group]
+
+
+def recipe_pdf_download(st, name, sections, document_name, key, cover=None):
+    try:
+        from recipe_pdf import build_recipe_pdf
+    except ImportError:
+        st.caption("PDF 생성 도구를 불러오지 못했습니다.")
+        return
+    safe_name = name.translate(str.maketrans('/\\:*?"<>|', '／＼：＊？＂＜＞｜'))
+    st.download_button(
+        f"{document_name} PDF 다운로드",
+        data=lambda: build_recipe_pdf(name, sections, document_name, cover),
+        file_name=f"{safe_name}_{document_name.replace(' ', '')}.pdf",
+        mime="application/pdf",
+        key=f"recipe-pdf:{key}",
+        on_click="ignore",
+    )
 
 
 def required_prep_batches(conn, menu, rows):
@@ -359,14 +357,23 @@ def load_prep_recipe(name):
     return recipe_file, recipe
 
 
-def render_prep_batch(st, name, weight, rows):
+def render_prep_batch(st, name, weight, rows, menu_key):
     recipe_file, recipe = load_prep_recipe(name)
-    st.caption(prep_yield_text(weight))
+    basis = prep_yield_text(weight)
+    st.caption(basis)
     labels = (recipe or {}).get("ingredient_labels", {})
-    st.table([
+    ingredients = [
         {"재료": labels.get(ingredient.strip(), ingredient), "배치 투입량": f"{quantity:g} {unit or ''}".strip()}
         for ingredient, quantity, unit in rows
-    ])
+    ]
+    st.table(ingredients)
+    sections = [("meta", basis), ("heading", "1회 제조 재료"),
+                ("table", [("재료", "배치 투입량"), *(tuple(row.values()) for row in ingredients)])]
+    if recipe:
+        sections.extend(recipe_instruction_sections(recipe_file, recipe, {}))
+    else:
+        sections.append(("text", "프랩 제조법 확인이 필요합니다."))
+    recipe_pdf_download(st, name, sections, "프랩 제조 매뉴얼", f"{menu_key}:prep:{name}")
     if not recipe:
         st.caption("프랩 제조법 확인이 필요합니다.")
         return
@@ -393,7 +400,7 @@ def recipe_instruction_sections(recipe_file, recipe, photos):
             yield "text", f"{number}. {item}"
     yield "heading", "조리"
     for index, step in enumerate(recipe["steps"], start=1):
-        yield "text", f"{index}. {step['title']}"
+        yield "step", f"{index}. {step['title']}"
         for position in range(1, 4):
             note = photo_note(step, position)
             photo = step_photo(recipe_file.parent, note, photos, index, position)
