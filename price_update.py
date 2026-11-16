@@ -1,6 +1,7 @@
 from contextlib import closing
 from hashlib import sha256
 from math import isfinite
+import re
 
 import pandas as pd
 
@@ -13,6 +14,32 @@ REVIEW_CODES = {
     "F331400": "식용유 상품명과 규격 확인",
 }
 OUTSIDE_COST_SCOPE = "메뉴 원가에 연결된 기존 품목이 아님"
+REPLACEMENT_CODES = {
+    "F369915": ("F339571", "연포탕육수", "2kg*5ea/box"),
+    "F369916": ("F339572", "볶음소스", "2kg*5ea/box"),
+    "F369917": ("F339573", "무침소스", "2kg*5ea/box"),
+    "F369918": ("F339574", "수육육수", "2kg*5ea/box"),
+    "F369919": ("F343382", "유자폰즈소스", "2kg*5ea/box"),
+    "F370155": ("F339570", "오징어튀김가루", "1kg*10ea/box"),
+}
+
+
+def weight_in_grams(spec, order_unit):
+    if str(order_unit).strip().upper() == "KG":
+        return 1000
+    text = str(spec).lower().replace(",", "")
+    number = r"(\d+(?:\.\d+)?)\s*(kg|g)\b"
+    pack = re.search(number + r"\s*[x×*]\s*(\d+)\s*(?:ea|개입|개|팩)\s*/?\s*box", text)
+    if pack:
+        amount, unit, count = pack.groups()
+        return float(amount) * (1000 if unit == "kg" else 1) * int(count)
+    simple = re.match(r"\s*(?:\[box\]\s*|ea\s*/\s*)?" + number, text)
+    if simple:
+        amount, unit = simple.groups()
+        if str(order_unit).strip().upper() == "BOX" and re.search(r"[x×*]", text[simple.end():]):
+            return None
+        return float(amount) * (1000 if unit == "kg" else 1)
+    return None
 
 
 def compare_prices(frame, master):
@@ -28,18 +55,44 @@ def compare_prices(frame, master):
         raise ValueError("파일에 푸디스트 상품코드가 없습니다.")
 
     changes, review = [], []
+    source_codes = set(frame["상품코드"])
     for code, group in frame.groupby("상품코드", sort=False):
         row = group.iloc[0]
         price = pd.to_numeric(row["단가"], errors="coerce")
-        existing = master.get(code)
+        target = code
         spec = row.get("규격", "")
+        product = str(row["상품명"]).strip()
+        reason = REVIEW_CODES.get(code)
+        if code not in master and code in REPLACEMENT_CODES:
+            previous, expected_name, expected_spec = REPLACEMENT_CODES[code]
+            if previous in master:
+                target = previous
+                if (
+                    expected_name not in "".join(product.split())
+                    or "".join(str(spec).lower().split()) != expected_spec
+                    or master[previous][2:] != (10000, "g")
+                ):
+                    reason = "신규 코드의 상품명이나 10kg 박스 규격 확인 필요"
+                elif previous in source_codes:
+                    reason = "기존 코드와 신규 코드가 모두 있어 어느 단가를 쓸지 확인 필요"
+        existing = master.get(target)
+        capacity, unit = existing[2:] if existing else (None, "")
+        new_weight = weight_in_grams(spec, row.get("단위", ""))
+        app_pack = f"{capacity:,.0f} {unit}" if capacity is not None else ""
+        comparison = "규격 직접 확인"
+        if unit == "g" and new_weight is not None and capacity is not None:
+            if abs(new_weight - capacity) <= 0.01:
+                comparison = "포장 중량 일치"
+            else:
+                comparison = f"포장 중량 다름 · 조회 {new_weight:,.0f} g"
+                reason = reason or "포장 중량 변경 확인 필요"
         entry = {
-            "상품코드": code, "앱 재료명": existing[0] if existing else "",
-            "조회 상품명": str(row["상품명"]).strip(), "조회 규격": "" if pd.isna(spec) else str(spec),
+            "상품코드": code, "앱 상품코드": target, "앱 재료명": existing[0] if existing else "",
+            "조회 상품명": product, "앱 포장 기준": app_pack,
+            "조회 규격": "" if pd.isna(spec) else str(spec), "규격 비교": comparison,
             "기존 단가": existing[1] if existing else None,
             "조회 단가": float(price) if isfinite(price) else None,
         }
-        reason = REVIEW_CODES.get(code)
         if len(group) > 1:
             reason = "엑셀에 같은 상품코드가 여러 줄 있음"
         elif not existing:
@@ -57,7 +110,7 @@ def apply_prices(conn, chosen, record_price_change):
     with conn:
         cursor = conn.cursor()
         for row in chosen:
-            code, old, new = row["상품코드"], row["기존 단가"], row["조회 단가"]
+            code, old, new = row["앱 상품코드"], row["기존 단가"], row["조회 단가"]
             cursor.execute(
                 "UPDATE ingredients SET supply_price=? WHERE item_code=? AND supply_price=?",
                 (new, code, old),
@@ -68,7 +121,7 @@ def apply_prices(conn, chosen, record_price_change):
 
 
 def show_price_update(st, get_connection, record_price_change):
-    st.write("푸디스트 원가관리용 즐겨찾기 엑셀을 올리고, 반영할 상품을 선택하세요.")
+    st.write("푸디스트 즐겨찾기 파일을 올리고, 앱 포장 기준과 조회 규격을 비교한 뒤 단가를 반영하세요.")
     upload = st.file_uploader("푸디스트 즐겨찾기 파일", type=["xlsx", "csv"])
     if upload is None:
         return
@@ -76,15 +129,15 @@ def show_price_update(st, get_connection, record_price_change):
         frame = pd.read_csv(upload) if upload.name.lower().endswith(".csv") else pd.read_excel(upload)
         with closing(get_connection()) as conn:
             master = {
-                code: (name, price)
-                for code, name, price in conn.execute("""
+                code: (name, price, capacity, unit)
+                for code, name, price, capacity, unit in conn.execute("""
                     WITH RECURSIVE used(name) AS (
                         SELECT TRIM(ingredient_name) FROM menu_bom WHERE menu_type <> '프랩'
                         UNION
                         SELECT TRIM(bom.ingredient_name) FROM menu_bom AS bom
                         JOIN used ON TRIM(bom.menu_name) = used.name
                     )
-                    SELECT item_code, item_name, supply_price FROM ingredients
+                    SELECT item_code, item_name, supply_price, total_capacity, unit FROM ingredients
                     JOIN used ON TRIM(ingredients.item_name) = used.name
                     WHERE NOT EXISTS (
                         SELECT 1 FROM menu_bom WHERE TRIM(menu_name) = used.name
@@ -103,11 +156,9 @@ def show_price_update(st, get_connection, record_price_change):
         saved_signature, revision, select_all = st.session_state.get(state_key, ("", 0, False))
         if saved_signature != signature:
             revision, select_all = 0, False
-        select_column, clear_column, _ = st.columns([1, 1, 4])
-        if select_column.button("전체 선택", key="price_update_select_all"):
-            revision, select_all = revision + 1, True
-        if clear_column.button("선택 해제", key="price_update_clear_selection"):
-            revision, select_all = revision + 1, False
+        checked = st.checkbox("반영 · 전체 선택", value=select_all, key=f"price_update_all:{signature}")
+        if checked != select_all:
+            revision, select_all = revision + 1, checked
         st.session_state[state_key] = signature, revision, select_all
         table = pd.DataFrame(changes)
         table.insert(0, "반영", select_all)
@@ -133,10 +184,16 @@ def show_price_update(st, get_connection, record_price_change):
     skipped = [row for row in review if row["확인 사항"] == OUTSIDE_COST_SCOPE]
     if needs_review:
         with st.expander(f"확인 필요 · {len(needs_review)}개", expanded=True):
-            st.caption("아래 품목은 이번 단가 갱신에 포함하지 않습니다.")
+            st.caption(
+                "이 목록은 자동 반영되지 않습니다. 같은 상품·포장 기준이면 관리자 전용의 "
+                "‘식재료 정보 관리’에서 단가를 직접 수정하세요. 실제 포장량이 바뀌었다면 단가와 포장용량을 함께 수정하세요. "
+                "다른 상품이나 완성품·부재료 묶음이면 "
+                "기존 단가를 유지하고, 배합 원가가 확인되면 그 값을 직접 수정하세요."
+            )
             st.dataframe(pd.DataFrame(needs_review), hide_index=True, use_container_width=True)
     if skipped:
         with st.expander(f"원가 연동 대상 아님 · {len(skipped)}개 건너뜀"):
+            st.caption("현재 메뉴 원가에 쓰이는 식재료 코드와 연결되지 않은 품목입니다. 실제 사용 품목이 여기 있으면 앱의 등록 코드와 조회 코드를 확인하세요.")
             st.dataframe(
                 pd.DataFrame(skipped)[["상품코드", "조회 상품명", "조회 규격", "조회 단가"]],
                 hide_index=True, use_container_width=True,
