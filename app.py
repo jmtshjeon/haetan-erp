@@ -176,23 +176,22 @@ with st.sidebar.expander("관리자 로그인"):
         st.error("관리자 비밀번호를 확인해 주세요.")
 
 franchise_menus = [
-    "1. 메뉴 원가 종합분석표",
-    "2. 메뉴별 원가/마진 분석",
-    "레시피",
-    "6. 📉 단가 변동 이력 분석 (History)",
+    "1. 전체 메뉴 원가표",
+    "2. 메뉴별 원가·마진",
+    "3. 조리 레시피",
+    "4. 식재료 단가 변동 이력",
 ]
 if is_admin:
-    admin_menus = franchise_menus[:-1] + [
-        "3. 레시피 DB 업로드",
-        "4. 식재료 DB 마스터 관리",
-        "5. 푸디스트 및 외부식재료 DB 동기화",
-        franchise_menus[-1],
+    admin_menus = franchise_menus + [
+        "5. 원가용 레시피 관리",
+        "6. 식재료 정보 관리",
+        "7. 식재료 단가 업데이트",
     ]
     menu = st.sidebar.radio("관리자 메뉴", admin_menus, key="admin_menu")
 else:
     menu = st.sidebar.radio("가맹점용 · 조회", franchise_menus, key="franchise_menu")
 
-if menu != "레시피":
+if menu != "3. 조리 레시피":
     st.markdown(
         """
         <div style='background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
@@ -204,8 +203,8 @@ if menu != "레시피":
     )
 
 # --- 기능 1: 전체 메뉴 종합 요약 분석표 ---
-if menu == "1. 메뉴 원가 종합분석표":
-    st.subheader("📋 메뉴 원가 종합분석표")
+if menu == "1. 전체 메뉴 원가표":
+    st.subheader("전체 메뉴 원가표")
     if is_admin:
         st.markdown("전체 메뉴의 마진을 분석합니다. **판매가(원)를 더블클릭하여 수정한 뒤 반드시 아래의 [저장하기] 버튼을 누르세요.**")
     else:
@@ -301,7 +300,7 @@ if menu == "1. 메뉴 원가 종합분석표":
             st.info("현재 등록된 판매 메뉴가 없습니다.")
 
 # --- 기능 2: 메뉴별 원가/마진 분석 ---
-elif menu == "2. 메뉴별 원가/마진 분석":
+elif menu == "2. 메뉴별 원가·마진":
     st.subheader("📈 카테고리별 원가/마진 상세 분석")
     st.markdown("상단의 리스트에서 분석할 메뉴를 클릭하시면 아래에 상세 내역이 표시됩니다.")
     
@@ -401,13 +400,13 @@ elif menu == "2. 메뉴별 원가/마진 분석":
                         m3.metric(label="최종 원가율", value=f"{cost_rate:.1f} %", delta=f"{30 - cost_rate:.1f}% (안정권 30% 기준)", delta_color="inverse")
 
 # --- 기능 3: 레시피 DB 업로드 ---
-elif menu == "레시피":
+elif menu == "3. 조리 레시피":
     from recipe_view import show_recipes
 
     show_recipes(st, get_connection, is_admin)
 
-elif menu == "3. 레시피 DB 업로드":
-    st.subheader("🍳 표준 메뉴 레시피(BOM) DB 관리")
+elif menu == "5. 원가용 레시피 관리":
+    st.subheader("원가용 레시피 관리")
     
     if not is_admin:
         st.info("⚠️ 레시피 파일 업로드 및 데이터 덮어쓰기는 **관리자만 가능**합니다. (좌측 메뉴에서 비밀번호 입력)")
@@ -535,7 +534,7 @@ elif menu == "3. 레시피 DB 업로드":
                 st.rerun()
 
 # --- 기능 4: 식재료 DB 마스터 관리 ---
-elif menu == "4. 식재료 DB 마스터 관리":
+elif menu == "6. 식재료 정보 관리":
     st.subheader("📝 식재료 마스터 DB 관리")
     
     if is_admin:
@@ -611,7 +610,7 @@ elif menu == "4. 식재료 DB 마스터 관리":
     conn.close()
 
 # --- 기능 5: 푸디스트 및 외부식재료 DB 동기화 ---
-elif menu == "5. 푸디스트 및 외부식재료 DB 동기화":
+elif menu == "7. 식재료 단가 업데이트":
     st.subheader("🔄 물류 단가 스마트 자동 업데이트")
     
     if not is_admin:
@@ -700,7 +699,7 @@ elif menu == "5. 푸디스트 및 외부식재료 DB 동기화":
                             else: st.info("신규 추가된 품목이 없습니다.")
 
 # --- 기능 6: 물류 단가 변동 이력 분석 ---
-elif menu == "6. 📉 단가 변동 이력 분석 (History)":
+elif menu == "4. 식재료 단가 변동 이력":
     st.subheader("📉 식재료 단가 장기 변동 추이 및 이력 분석")
     conn = get_connection()
     df_hist = pd.read_sql_query("SELECT update_date, item_code, item_name, old_price, new_price, change_amount FROM price_history ORDER BY update_date DESC", conn)
