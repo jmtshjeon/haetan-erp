@@ -108,6 +108,9 @@ def show_recipes(st, get_connection, is_admin=False):
         ".st-key-recipe-page .recipe-table thead th{padding:6px 8px;background:rgba(128,128,128,.14);text-align:left;font-weight:700}"
         ".st-key-recipe-page .recipe-table thead th:last-child,.st-key-recipe-page .recipe-table td:last-child"
         "{width:6rem;text-align:right;white-space:nowrap;border-left:1px solid rgba(128,128,128,.23)}"
+        ".st-key-recipe-page .recipe-table caption{caption-side:top;text-align:left;height:32px;font-weight:700}"
+        ".st-key-recipe-page .recipe-table thead tr{height:34px}"
+        "@media(min-width:641px){.st-key-recipe-page .st-key-recipe-cover{padding-top:66px}}"
         ".st-key-recipe-page .recipe-photo-slot{min-height:76px;display:grid;place-items:center;"
         "border:1px dashed rgba(128,128,128,.55);border-radius:6px;font-size:.85rem}</style>",
         unsafe_allow_html=True,
@@ -157,7 +160,8 @@ def render_recipe_page(st, get_connection, is_admin):
     with cover_column:
         cover = find_photo(ROOT / "메뉴이미지", menu)
         if cover:
-            st.image(str(cover), width=380)
+            with st.container(key="recipe-cover"):
+                st.image(str(cover), width=380)
         else:
             st.info("자료 사진 없음")
     with ingredients:
@@ -175,9 +179,8 @@ def render_recipe_page(st, get_connection, is_admin):
                     label = escape(labels.get(name.strip(), name))
                     amount = escape(f"{quantity:g} {unit or ''}".strip())
                     table_rows.append(f"<tr><td>{label}</td><td>{amount}</td></tr>")
-                st.markdown(f"**{heading}**")
                 st.markdown(
-                    '<table class="recipe-table"><thead><tr>'
+                    f'<table class="recipe-table"><caption>{heading}</caption><thead><tr>'
                     '<th scope="col">재료</th><th scope="col">투입량</th></tr></thead><tbody>'
                     + "".join(table_rows) + "</tbody></table>",
                     unsafe_allow_html=True,
