@@ -22,18 +22,27 @@ APPETIZER_MENUS = {
     "미나리백합탕", "오징어초무침", "오징어해장탕", "오징어묵은지전",
     "골뱅이비빔칼국수", "오징어숙회", "아바이오징어순대SET",
 }
+MENU_BOARD_ORDER = ("메인메뉴", "안주류", "점심특선", "추가 메뉴", "사이드", "하이볼", "프랩")
 
 
-def recipe_display_category(file):
-    category = file.parent.parent.name
-    name = file.parent.name.replace("／", "/")
-    if category == "최종메뉴":
+def menu_board_category(category, name):
+    if "하이볼" in name:
+        return "하이볼"
+    if category == "주류/음료":
+        return None
+    if category in ("최종메뉴", "메인메뉴", "신메뉴", "세트메뉴"):
         if name == "날치알볶음밥":
             return "추가 메뉴"
         return "안주류" if name in APPETIZER_MENUS else "메인메뉴"
     if category == "추가메뉴":
         return "사이드" if name == "오징어만두튀김" else "추가 메뉴"
     return category
+
+
+def recipe_display_category(file):
+    category = file.parent.parent.name
+    name = file.parent.name.replace("／", "/")
+    return menu_board_category(category, name) or category
 
 
 def find_photo(folder, stem):
@@ -157,7 +166,7 @@ def render_recipe_page(st, get_connection, is_admin):
         return
 
     categories = {recipe_display_category(file) for file in files}
-    order = ["메인메뉴", "점심특선", "안주류", "추가 메뉴", "사이드", "프랩"]
+    order = MENU_BOARD_ORDER
     ordered_categories = [category for category in order if category in categories]
     ordered_categories.extend(sorted(categories.difference(order)))
     group = st.radio("메뉴 분류", ["전체 메뉴", *ordered_categories], horizontal=True)

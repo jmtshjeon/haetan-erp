@@ -6,7 +6,7 @@ import io
 import re
 from pathlib import Path
 from contextlib import closing
-from recipe_view import find_menu_photo
+from recipe_view import MENU_BOARD_ORDER, find_menu_photo, menu_board_category
 
 # --- [설정] 관리자 비밀번호 ---
 ADMIN_PASSWORD = os.getenv("HAETAN_ADMIN_PASSWORD")
@@ -210,12 +210,12 @@ OYSTER_COST_ESTIMATES = {
 }
 
 
-def show_oyster_costs():
+def show_oyster_costs(expanded=False):
     def rate_text(cost, price):
         tenths = (cost * 2000 + price) // (2 * price)
         return f"{tenths / 10:.1f}%"
 
-    with st.expander("시즌 메뉴 · 통영굴 3종"):
+    with st.expander("시즌 메뉴 · 통영굴 3종", expanded=expanded):
         st.caption("11월 판매 재개 · B타입 기준판매가 · 공지 원가 기준 (생굴 13,000원/kg)")
         rows = [
             {
@@ -227,7 +227,7 @@ def show_oyster_costs():
             for name, (price, cost) in OYSTER_COST_ESTIMATES.items()
         ]
         st.table(pd.DataFrame(rows))
-        name = st.selectbox("판매가를 비교할 굴 메뉴", list(OYSTER_COST_ESTIMATES))
+        name = st.radio("판매가를 비교할 굴 메뉴", list(OYSTER_COST_ESTIMATES), horizontal=True)
         photo = find_menu_photo(name)
         if photo:
             st.image(str(photo), caption=name, width=280)
@@ -240,16 +240,6 @@ def show_oyster_costs():
             rate, margin = st.columns(2)
             rate.metric("원가율", rate_text(cost, actual))
             margin.metric("판매가 − 참고 이론원가", f"{actual - cost:,}원")
-
-
-def menu_display_category(category, name):
-    if "하이볼" in name:
-        return "하이볼"
-    if category == "주류/음료":
-        return None
-    if category in ("최종메뉴", "메인메뉴", "신메뉴", "세트메뉴"):
-        return "메뉴"
-    return category
 
 
 def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
@@ -317,7 +307,6 @@ def show_menu_cost_detail(selected_m_name, df_bom, price_dict, unit_prices):
 # --- 기능 1: 전체 메뉴 종합 요약 분석표 ---
 if menu == "1. 전체 메뉴 원가표":
     st.subheader("전체 메뉴 원가표")
-    show_oyster_costs()
     if is_admin:
         st.markdown("전체 메뉴의 마진을 분석합니다. **판매가(원)를 더블클릭하여 수정한 뒤 반드시 아래의 [저장하기] 버튼을 누르세요.**")
     else:
@@ -343,7 +332,7 @@ if menu == "1. 전체 메뉴 원가표":
         
         for m_name in final_menus:
             menu_data = df_bom[df_bom['menu_name'] == m_name]
-            menu_category = menu_display_category(menu_data.iloc[0]['menu_type'], m_name) 
+            menu_category = menu_board_category(menu_data.iloc[0]['menu_type'], m_name) 
             if menu_category is None:
                 continue
             sell_price = price_dict.get(m_name, 0.0) 
@@ -370,7 +359,7 @@ if menu == "1. 전체 메뉴 원가표":
         if summary_data:
             df_summary = pd.DataFrame(summary_data)
             
-            category_order = {"메뉴": 1, "점심특선": 2, "추가메뉴": 3, "사이드": 4, "하이볼": 5}
+            category_order = {category: index for index, category in enumerate(MENU_BOARD_ORDER)}
             df_summary['sort_key'] = df_summary['카테고리'].map(category_order).fillna(99)
             df_summary = df_summary.sort_values(by=['sort_key', '메뉴명']).drop(columns=['sort_key'])
 
@@ -383,26 +372,25 @@ if menu == "1. 전체 메뉴 원가표":
                     return 'background-color: #e6f2ff; color: #0066cc; font-weight: bold;'
                 return ''
                 
-            groups = df_summary["카테고리"].unique().tolist()
-            group = st.selectbox("메뉴 분류", ["전체", *groups])
-            visible = df_summary if group == "전체" else df_summary.loc[df_summary["카테고리"] == group]
-            visible = visible.reset_index(drop=True)
-            styled_df = visible.style.format({
-                "적용 판매가(원)": lambda value: f"{value:,}" if value > 0 else "미등록",
-                "총 원가(원)": "{:,}",
-                "예상 마진(원)": "{:,}",
-                "원가율(%)": "{:.1f}"
-            }, na_rep="—").map(color_cost_rate, subset=['원가율(%)'])
-
-            st.caption("표에서 메뉴 행을 선택하면 아래에 원가와 마진 상세가 표시됩니다.")
-            selection = st.dataframe(
-                styled_df, hide_index=True, use_container_width=True,
-                on_select="rerun", selection_mode="single-row", key=f"cost_overview:{group}",
-            )
-            if selection.selection.rows:
-                row_index = selection.selection.rows[0]
-                if row_index < len(visible):
-                    show_menu_cost_detail(visible.iloc[row_index]["메뉴명"], df_bom, price_dict, unit_prices)
+            st.caption("메뉴 행을 선택하면 해당 분류의 표 아래에 원가와 마진 상세가 열립니다.")
+            for group, visible in df_summary.groupby("카테고리", sort=False):
+                st.markdown(f"#### {group}")
+                visible = visible.reset_index(drop=True)
+                styled_df = visible.drop(columns=["카테고리"]).style.format({
+                    "적용 판매가(원)": lambda value: f"{value:,}" if value > 0 else "미등록",
+                    "총 원가(원)": "{:,}",
+                    "예상 마진(원)": "{:,.0f}",
+                    "원가율(%)": "{:.1f}",
+                }, na_rep="—").map(color_cost_rate, subset=["원가율(%)"])
+                selection = st.dataframe(
+                    styled_df, hide_index=True, use_container_width=True,
+                    on_select="rerun", selection_mode="single-row", key=f"cost_overview:{group}",
+                    height=38 + 35 * len(visible),
+                )
+                if selection.selection.rows:
+                    row_index = selection.selection.rows[0]
+                    if row_index < len(visible):
+                        show_menu_cost_detail(visible.iloc[row_index]["메뉴명"], df_bom, price_dict, unit_prices)
 
             if is_admin:
                 with st.expander("기준 판매가 수정"):
@@ -431,6 +419,8 @@ if menu == "1. 전체 메뉴 원가표":
         else:
             st.info("현재 등록된 판매 메뉴가 없습니다.")
 
+    show_oyster_costs(expanded=True)
+
 # --- 기능 2: 메뉴별 원가/마진 분석 ---
 elif menu == "2. 메뉴별 원가·마진":
     show_oyster_costs()
@@ -449,11 +439,11 @@ elif menu == "2. 메뉴별 원가·마진":
 
         sales_menus_df = df_bom[df_bom["menu_type"] != "프랩"].copy()
         sales_menus_df["display_category"] = [
-            menu_display_category(cat, name)
+            menu_board_category(cat, name)
             for cat, name in zip(sales_menus_df["menu_type"], sales_menus_df["menu_name"])
         ]
         existing = sales_menus_df["display_category"].dropna().unique().tolist()
-        order = ["메뉴", "점심특선", "추가메뉴", "사이드", "하이볼"]
+        order = list(MENU_BOARD_ORDER)
         category_order = [cat for cat in dict.fromkeys(order + existing) if cat in existing]
         if not category_order:
             st.info("현재 등록된 판매 메뉴가 없습니다.")
