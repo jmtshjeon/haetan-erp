@@ -171,7 +171,7 @@ def calculate_unit_prices():
     return prices, df_bom, list(missing_ingredients)
 
 # --- 2. Streamlit UI 공통 설정 ---
-APP_NAME = "해탄 가맹점 운영 가이드"
+APP_NAME = "해탄 조리·원가"
 st.set_page_config(page_title=APP_NAME, page_icon="🦑", layout="wide")
 
 # 💡 [핵심 최적화] 세션 유지(Keep-Alive) 스크립트 삽입
