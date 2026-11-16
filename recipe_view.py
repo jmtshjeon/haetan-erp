@@ -202,13 +202,24 @@ def render_selected_recipe(st, get_connection, is_admin, selected):
                ORDER BY bom.id""",
             (menu, category),
         ).fetchall()
+        prep_batches = required_prep_batches(conn, menu, rows) if category != "프랩" else {}
+        prep_yield = None
+        if category == "프랩":
+            stored = conn.execute(
+                """SELECT sell_price_or_weight FROM menu_bom
+                   WHERE TRIM(menu_name) = ? AND menu_type = '프랩'
+                   ORDER BY id LIMIT 1""",
+                (menu,),
+            ).fetchone()
+            prep_yield = stored[0] if stored else None
 
     photos = {}
     if is_admin:
         recipe, photos = edit_recipe(st, recipe_file, recipe, rows, original)
+    basis = prep_yield_text(prep_yield) if category == "프랩" else recipe["servings"]
     st.markdown(
         f'<h3 style="margin:0;padding:0">{escape(menu)}</h3>'
-        f'<p style="margin:2px 0 8px">{escape(recipe["servings"])}</p>',
+        f'<p style="margin:2px 0 8px">{escape(basis)}</p>',
         unsafe_allow_html=True,
     )
     cover_column, ingredients = st.columns([2, 3])
@@ -225,7 +236,8 @@ def render_selected_recipe(st, get_connection, is_admin, selected):
             labels = recipe.get("ingredient_labels", {})
             toppings = set(recipe.get("toppings", []))
             for heading, group in (
-                ("조리 재료", [row for row in rows if row[0].strip() not in toppings]),
+                ("1회 제조 재료" if category == "프랩" else "조리 재료",
+                 [row for row in rows if row[0].strip() not in toppings]),
                 ("제공 전 토핑", [row for row in rows if row[0].strip() in toppings]),
             ):
                 if not group:
@@ -244,7 +256,74 @@ def render_selected_recipe(st, get_connection, is_admin, selected):
         else:
             st.info("원가 데이터에 등록된 재료가 없습니다.")
 
+    if prep_batches:
+        st.markdown("#### 필요한 프랩")
+        st.caption("위 재료표는 이 메뉴의 사용량이고, 아래 프랩 재료는 한 번 만드는 분량입니다.")
+        for prep_name, (yield_weight, prep_rows) in prep_batches.items():
+            with st.expander(prep_name):
+                render_prep_batch(st, prep_name, yield_weight, prep_rows)
+
     st.divider()
+    render_recipe_instructions(st, recipe_file, recipe, photos)
+
+
+def required_prep_batches(conn, menu, rows):
+    if not rows:
+        return {}
+    linked = conn.execute(
+        """WITH RECURSIVE dependencies(name) AS (
+               SELECT TRIM(ingredient_name) FROM menu_bom WHERE TRIM(menu_name) = ?
+               UNION
+               SELECT TRIM(bom.ingredient_name) FROM menu_bom AS bom
+               JOIN dependencies ON TRIM(bom.menu_name) = dependencies.name
+           )
+           SELECT TRIM(bom.menu_name), bom.sell_price_or_weight, bom.ingredient_name, bom.input_qty,
+                  COALESCE(
+                      (SELECT unit FROM ingredients WHERE TRIM(item_name) = TRIM(bom.ingredient_name) LIMIT 1),
+                      CASE WHEN EXISTS (
+                          SELECT 1 FROM menu_bom AS prep
+                          WHERE prep.menu_type = '프랩' AND TRIM(prep.menu_name) = TRIM(bom.ingredient_name)
+                      ) THEN 'g' END
+                  )
+           FROM menu_bom AS bom
+           JOIN dependencies ON TRIM(bom.menu_name) = dependencies.name
+           WHERE bom.menu_type = '프랩' AND TRIM(bom.menu_name) <> ?
+           ORDER BY bom.id""",
+        (menu, menu),
+    )
+    batches = {}
+    for name, weight, ingredient, quantity, unit in linked:
+        batches.setdefault(name, (weight, []))[1].append((ingredient, quantity, unit))
+    direct = dict.fromkeys(name.strip() for name, _, _ in rows)
+    return {name: batches[name] for name in dict.fromkeys([*direct, *batches]) if name in batches}
+
+
+def prep_yield_text(weight):
+    if weight is None or weight <= 0:
+        return "1회 제조 기준 · 총 생산량 미등록"
+    kilograms = f" ({weight / 1000:,.3f}".rstrip("0").rstrip(".") + " kg)" if weight >= 1000 else ""
+    return f"1회 제조 기준 · 총 생산량 {weight:,.3f}".rstrip("0").rstrip(".") + f" g{kilograms}"
+
+
+def render_prep_batch(st, name, weight, rows):
+    recipe_file = RECIPE_FOLDER / "프랩" / name.replace("/", "／") / "레시피.json"
+    try:
+        recipe = json.loads(recipe_file.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, ValueError):
+        recipe = None
+    st.caption(prep_yield_text(weight))
+    labels = (recipe or {}).get("ingredient_labels", {})
+    st.table([
+        {"재료": labels.get(ingredient.strip(), ingredient), "배치 투입량": f"{quantity:g} {unit or ''}".strip()}
+        for ingredient, quantity, unit in rows
+    ])
+    if not recipe:
+        st.caption("프랩 제조법 확인이 필요합니다.")
+        return
+    render_recipe_instructions(st, recipe_file, recipe, {})
+
+
+def render_recipe_instructions(st, recipe_file, recipe, photos):
     st.markdown("### 조리법")
     if recipe.get("review_note"):
         st.caption(recipe["review_note"])
