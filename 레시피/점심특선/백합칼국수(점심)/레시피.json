@@ -1,0 +1,29 @@
+{
+  "servings": "1인분",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 백합과 면 담기",
+          "description": "냉동 백합을 씻어 냄비에 넣고 그 위에 칼국수 면을 올려요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 육수 넣기",
+          "description": "레시피의 육수를 붓고 미나리와 고추를 올려요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "가열 및 제공 기준은 매장에서 확인해 주세요."
+}

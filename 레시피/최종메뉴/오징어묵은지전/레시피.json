@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 반죽 버무리기",
+          "description": "묵은지전 반죽에 손질한 오징어를 넣어 버무려요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 팬에서 굽기",
+          "description": "기름 두른 팬에 반죽을 펴고 고추를 올려요.",
+          "caution": ""
+        },
+        {
+          "title": "3단계 · 뒤집어 익히기",
+          "description": "양면이 타지 않게 불을 조절하며 익혀요.",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "접시에 담고 유자폰즈와 야채피클을 곁들여요.",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": ""
+}

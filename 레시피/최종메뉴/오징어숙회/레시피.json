@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 오징어와 버섯 데치기",
+          "description": "매뉴얼 기준으로 오징어와 흰목이버섯을 각각 데쳐요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 접시에 담기",
+          "description": "부추를 깔고 오징어와 흰목이버섯을 올려요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "백묵은지와 초장을 곁들여요.",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "오징어 손질 상태에 맞는 가열 기준을 확인해 주세요."
+}

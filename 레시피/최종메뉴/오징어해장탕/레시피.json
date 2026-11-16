@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 냄비에 담기",
+          "description": "무채, 콩나물과 손질 오징어를 냄비에 담아요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 고명과 육수 넣기",
+          "description": "고춧가루와 채소를 올리고 연포탕 육수를 부어요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "계란과 김가루를 곁들이는 방법은 판매 품목에 맞게 확인해 주세요.",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "점심과 안주 메뉴의 제공 기준은 각각 확인해 주세요."
+}

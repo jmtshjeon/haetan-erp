@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 튀김옷 입히기",
+          "description": "오징어에 튀김가루를 묻힌 다음 준비한 튀김반죽을 입혀요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 튀기기",
+          "description": "튀김끼리 붙지 않게 튀기고 기름을 빼요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "유산지를 깐 접시에 담고 유자폰즈 소스를 곁들여요.",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "튀김기 온도·시간과 접시별 제공 개수는 매장 기준을 확인해 주세요."
+}

@@ -1,0 +1,29 @@
+{
+  "servings": "완성중량 8000 g",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 반죽 섞기",
+          "description": "재료표에 맞춰 계량하고 가루가 고르게 섞일 때까지 저어요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "보관 시간과 온도는 매장 기준을 확인해 주세요."
+}

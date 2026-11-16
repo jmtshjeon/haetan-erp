@@ -1,0 +1,29 @@
+{
+  "servings": "1인분",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "조리 순서와 제공법 확인이 필요합니다."
+}

@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 순대 데우기",
+          "description": "조리 매뉴얼에 따라 오징어순대와 고기순대를 데워요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 버섯 준비",
+          "description": "흰목이버섯을 데쳐 준비해요.",
+          "caution": ""
+        },
+        {
+          "title": "3단계 · 스팀 접시 담기",
+          "description": "부추, 버섯, 오징어순대, 고기순대 순으로 담아요.",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "오징어무침, 백묵은지, 초장, 소금을 곁들여요.",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": ""
+}

@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 오징어와 제육 볶기",
+          "description": "달군 팬에 식용유를 두르고 오징어와 제육을 볶아요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 채소와 양념 넣기",
+          "description": "채소, 고춧가루를 넣고 볶다가 짬뽕소스를 넣어요.",
+          "caution": ""
+        },
+        {
+          "title": "3단계 · 냄비에 담기",
+          "description": "볶은 재료를 냄비에 담고 콩나물과 부추를 올려요.",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "테이블에서 끓여 제공하는 방식과 익힘 기준을 확인해 주세요."
+}

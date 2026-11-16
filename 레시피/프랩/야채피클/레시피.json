@@ -1,0 +1,29 @@
+{
+  "servings": "완성중량 7500 g",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "조리 매뉴얼에서 숙성 안내는 확인했으나 배합 순서와 보관 기준은 확인이 필요합니다."
+}

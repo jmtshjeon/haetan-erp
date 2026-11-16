@@ -1,0 +1,29 @@
+{
+  "servings": "완성중량 2340 g",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 육수와 통삼겹 준비",
+          "description": "보쌈육수에 통삼겹을 넣고 뚜껑을 닫아요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 설비 기준에 따라 삶기",
+          "description": "매장의 수육 설비에 정해진 가열·감압 절차를 따라 조리해요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "압력 장비의 가열, 감압, 익힘 확인 기준은 매장 책임자에게 확인해 주세요."
+}

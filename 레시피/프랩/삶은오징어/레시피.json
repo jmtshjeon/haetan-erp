@@ -1,0 +1,29 @@
+{
+  "servings": "완성중량 1000 g",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 삶고 헹구기",
+          "description": "무침용 오징어는 조리 매뉴얼에 따라 끓는 물에 익힌 뒤 찬물에 헹궈요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "제품 상태에 따른 익힘과 보관 기준을 확인해 주세요."
+}

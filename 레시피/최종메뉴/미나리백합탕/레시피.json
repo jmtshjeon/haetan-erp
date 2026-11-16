@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 백합 준비",
+          "description": "냉동 백합을 씻어 냄비에 담아요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 육수와 고추 넣기",
+          "description": "육수와 청양고추를 넣고 미나리와 고명을 올려요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "가열 및 제공 기준은 매장에서 확인해 주세요."
+}

@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 칼국수 삶기",
+          "description": "칼국수를 끓는 물에 3분 삶고 찬물에 헹궈요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 버무리기",
+          "description": "골뱅이, 채소, 초무침소스와 고춧가루를 버무려요.",
+          "caution": ""
+        },
+        {
+          "title": "3단계 · 접시에 담기",
+          "description": "무침을 접시에 둥글게 담고 가운데에 면을 놓아요.",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "면에 참기름과 볶음참깨를 곁들여 내요.",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": ""
+}

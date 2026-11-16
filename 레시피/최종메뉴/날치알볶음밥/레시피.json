@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 밥 담기",
+          "description": "따뜻한 밥을 그릇에 담고 참기름을 둘러요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 김가루와 채소 담기",
+          "description": "가장자리에 김가루를 두르고 가운데에 부추와 당근을 담아요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "날치알을 위에 올려 내요.",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": ""
+}

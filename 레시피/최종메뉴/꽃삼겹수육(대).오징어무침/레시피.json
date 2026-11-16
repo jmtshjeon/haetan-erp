@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 수육 썰기",
+          "description": "재료표에 맞춰 수육을 계량하고 약 2mm 두께로 썰어요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 접시에 담기",
+          "description": "수육을 둥글게 둘러 담고 가운데에 부추를 올려요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "재료표에 있는 오징어무침과 곁들임을 함께 내요.",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": ""
+}

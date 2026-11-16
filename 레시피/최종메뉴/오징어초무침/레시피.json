@@ -1,0 +1,29 @@
+{
+  "servings": "메뉴 1개 기준",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 오징어 준비",
+          "description": "삶은 오징어를 준비해요.",
+          "caution": ""
+        },
+        {
+          "title": "2단계 · 재료 버무리기",
+          "description": "오징어, 무채, 미나리, 초무침소스와 나머지 양념을 버무려요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "오징어가 위에 보이게 담고 참깨를 뿌려요.",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": ""
+}

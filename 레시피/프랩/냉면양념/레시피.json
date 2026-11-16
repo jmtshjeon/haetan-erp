@@ -1,0 +1,29 @@
+{
+  "servings": "완성중량 5250 g",
+  "steps": [
+    {
+      "title": "조리 과정",
+      "photo_notes": [
+        {
+          "title": "1단계 · 재료 섞기",
+          "description": "계량한 재료를 덩어리 없이 섞어요.",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        },
+        {
+          "title": "",
+          "description": "",
+          "caution": ""
+        }
+      ]
+    }
+  ],
+  "serving_method": "",
+  "preparation": [],
+  "serving_caution": "",
+  "review_note": "조리 매뉴얼의 냉면다데기 숙성 조건이 현행 배합과 같은지 확인해 주세요."
+}

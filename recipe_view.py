@@ -128,8 +128,9 @@ def render_recipe_page(st, get_connection, is_admin):
 
     category = st.radio("분류 폴더", categories, horizontal=True)
     files = sorted((RECIPE_FOLDER / category).glob("*/레시피.json"))
-    menu = st.radio("메뉴 선택", [file.parent.name for file in files], horizontal=True)
-    recipe_file = RECIPE_FOLDER / category / menu / "레시피.json"
+    selected = st.selectbox("메뉴 선택", files, format_func=lambda file: file.parent.name.replace("／", "/"))
+    recipe_file = selected
+    menu = selected.parent.name.replace("／", "/")
     try:
         original = recipe_file.read_bytes()
         recipe = json.loads(original.decode("utf-8-sig"))
@@ -190,6 +191,8 @@ def render_recipe_page(st, get_connection, is_admin):
 
     st.divider()
     st.markdown("### 조리법")
+    if recipe.get("review_note"):
+        st.caption(recipe["review_note"])
     preparation = recipe.get("preparation")
     sections = (["조리 전 준비"] if preparation else []) + ["조리", "제공법"]
     numbered = dict(zip(sections, ("①", "②", "③")))
