@@ -121,15 +121,18 @@ def show_recipes(st, get_connection, is_admin=False):
 
 def render_recipe_page(st, get_connection, is_admin):
     st.subheader("레시피")
-    categories = sorted({file.parent.parent.name for file in RECIPE_FOLDER.glob("*/*/레시피.json")})
-    if not categories:
+    files = sorted(RECIPE_FOLDER.glob("*/*/레시피.json"))
+    if not files:
         st.info("등록된 레시피가 없습니다.")
         return
 
-    category = st.radio("분류 폴더", categories, horizontal=True)
-    files = sorted((RECIPE_FOLDER / category).glob("*/레시피.json"))
+    categories = sorted({file.parent.parent.name for file in files})
+    group = st.radio("메뉴 분류", ["전체 메뉴", *categories], horizontal=True)
+    if group != "전체 메뉴":
+        files = [file for file in files if file.parent.parent.name == group]
     selected = st.selectbox("메뉴 선택", files, format_func=lambda file: file.parent.name.replace("／", "/"))
     recipe_file = selected
+    category = selected.parent.parent.name
     menu = selected.parent.name.replace("／", "/")
     try:
         original = recipe_file.read_bytes()
