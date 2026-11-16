@@ -11,6 +11,7 @@ REVIEW_CODES = {
     "F119932": "월계수잎 브랜드 확인",
     "F331400": "식용유 상품명과 규격 확인",
 }
+OUTSIDE_COST_SCOPE = "메뉴 원가에 연결된 기존 품목이 아님"
 
 
 def compare_prices(frame, master):
@@ -41,7 +42,7 @@ def compare_prices(frame, master):
         if len(group) > 1:
             reason = "엑셀에 같은 상품코드가 여러 줄 있음"
         elif not existing:
-            reason = "메뉴 원가에 연결된 기존 품목이 아님"
+            reason = OUTSIDE_COST_SCOPE
         elif not isfinite(price) or price <= 0 or existing[1] is None:
             reason = "기존 단가 또는 조회 단가 확인 필요"
         if reason:
@@ -115,6 +116,15 @@ def show_price_update(st, get_connection, record_price_change):
                 st.success(f"{len(chosen)}개 단가를 반영하고 변동 이력에 기록했습니다.")
     else:
         st.info("반영할 단가 변경이 없습니다.")
-    if review:
-        with st.expander(f"확인 필요 · {len(review)}개"):
-            st.dataframe(pd.DataFrame(review), hide_index=True, use_container_width=True)
+    needs_review = [row for row in review if row["확인 사항"] != OUTSIDE_COST_SCOPE]
+    skipped = [row for row in review if row["확인 사항"] == OUTSIDE_COST_SCOPE]
+    if needs_review:
+        with st.expander(f"확인 필요 · {len(needs_review)}개", expanded=True):
+            st.caption("아래 품목은 이번 단가 갱신에 포함하지 않습니다.")
+            st.dataframe(pd.DataFrame(needs_review), hide_index=True, use_container_width=True)
+    if skipped:
+        with st.expander(f"원가 연동 대상 아님 · {len(skipped)}개 건너뜀"):
+            st.dataframe(
+                pd.DataFrame(skipped)[["상품코드", "조회 상품명", "조회 규격", "조회 단가"]],
+                hide_index=True, use_container_width=True,
+            )
